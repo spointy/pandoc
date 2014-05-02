@@ -268,12 +268,12 @@ elementToHtml slideLevel opts (Sec level num (id',classes,keyvals) title' elemen
   -- always use level 1 for slide titles
   let level' = if slide then 1 else level
   let titleSlide = slide && level < slideLevel
-  header' <- if title' == [Str "\0"]  -- marker for hrule
+  header' <- if fmap scrubStrTag title' == [Str "\0" ()]  -- marker for hrule
                 then return mempty
                 else blockToHtml opts (Header level' (id',classes,keyvals) title')
   let isSec (Sec _ _ _ _ _) = True
       isSec (Blk _)         = False
-  let isPause (Blk x) = x == Para [Str ".",Space,Str ".",Space,Str "."]
+  let isPause (Blk x) = scrubStrTag x == Para [Str "." (),Space,Str "." (),Space,Str "." ()]
       isPause _       = False
   let fragmentClass = case writerSlideVariant opts of
                            RevealJsSlides  -> "fragment"
@@ -613,7 +613,7 @@ inlineListToHtml opts lst =
 inlineToHtml :: WriterOptions -> Inline -> State WriterState Html
 inlineToHtml opts inline =
   case inline of
-    (Str str)        -> return $ strToHtml str
+    (Str str _)      -> return $ strToHtml str
     (Space)          -> return $ strToHtml " "
     (LineBreak)      -> return $ if writerHtml5 opts then H5.br else H.br
     (Span (id',classes,kvs) ils)
@@ -723,8 +723,8 @@ inlineToHtml opts inline =
                                _             -> return mempty
       | f == Format "html" -> return $ preEscapedString str
       | otherwise          -> return mempty
-    (Link [Str str] (s,_)) | "mailto:" `isPrefixOf` s &&
-                             s == escapeURI ("mailto" ++ str) ->
+    (Link [Str str _] (s,_)) | "mailto:" `isPrefixOf` s &&
+                               s == escapeURI ("mailto" ++ str) ->
                         -- autolink
                         return $ obfuscateLink opts str s
     (Link txt (s,_)) | "mailto:" `isPrefixOf` s -> do
@@ -792,7 +792,7 @@ blockListToNote :: WriterOptions -> String -> [Block] -> State WriterState Html
 blockListToNote opts ref blocks =
   -- If last block is Para or Plain, include the backlink at the end of
   -- that block. Otherwise, insert a new Plain block with the backlink.
-  let backlink = [Link [Str "↩"] ("#" ++ writerIdentifierPrefix opts ++ "fnref" ++ ref,[])]
+  let backlink = [Link [Str "↩" ()] ("#" ++ writerIdentifierPrefix opts ++ "fnref" ++ ref,[])]
       blocks'  = if null blocks
                     then []
                     else let lastBlock   = last blocks

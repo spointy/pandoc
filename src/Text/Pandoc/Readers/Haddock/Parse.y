@@ -12,7 +12,10 @@ module Text.Pandoc.Readers.Haddock.Parse (parseString, parseParas) where
 
 import Text.Pandoc.Readers.Haddock.Lex
 import Text.Pandoc.Builder
-import Text.Pandoc.Shared (trim, trimr)
+import Text.Pandoc.Shared (trim, trimr, traverseAllInline)
+import Text.Pandoc.Walk (walk)
+import Control.Applicative
+import Control.Monad.Identity (runIdentity)
 import Data.Generics (everywhere, mkT)
 import Data.Char  (isSpace)
 import Data.Maybe (fromMaybe)
@@ -132,9 +135,10 @@ para' :: Inlines -> Blocks
 para' = para . trimInlines
 
 monospace :: Inlines -> Inlines
-monospace = everywhere (mkT go)
+monospace = walk go
   where
-    go (Str s) = Code nullAttr s
+    go :: Inline -> Inline
+    go (Str s _) = Code nullAttr s
     go x = x
 
 -- | Create a `Hyperlink` from given string.

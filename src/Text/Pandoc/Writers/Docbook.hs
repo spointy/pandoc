@@ -233,7 +233,7 @@ hasLineBreaks :: [Inline] -> Bool
 hasLineBreaks = getAny . query isLineBreak . walk removeNote
   where
     removeNote :: Inline -> Inline
-    removeNote (Note _) = Str ""
+    removeNote (Note _) = Str "" ()
     removeNote x = x
     isLineBreak :: Inline -> Any
     isLineBreak LineBreak = Any True
@@ -264,7 +264,7 @@ inlinesToDocbook opts lst = hcat $ map (inlineToDocbook opts) lst
 
 -- | Convert an inline element to Docbook.
 inlineToDocbook :: WriterOptions -> Inline -> Doc
-inlineToDocbook _ (Str str) = text $ escapeStringForXML str
+inlineToDocbook _ (Str str _) = text $ escapeStringForXML str
 inlineToDocbook opts (Emph lst) =
   inTagsSimple "emphasis" $ inlinesToDocbook opts lst
 inlineToDocbook opts (Strong lst) =
@@ -314,9 +314,9 @@ inlineToDocbook opts (Link txt (src, _)) =
               emailLink = inTagsSimple "email" $ text $
                           escapeStringForXML $ src'
           in  case txt of
-               [Str s] | escapeURI s == src' -> emailLink
-               _             -> inlinesToDocbook opts txt <+>
-                                  char '(' <> emailLink <> char ')'
+               [Str s _] | escapeURI s == src' -> emailLink
+               _               -> inlinesToDocbook opts txt <+>
+                                    char '(' <> emailLink <> char ')'
      else (if isPrefixOf "#" src
               then inTags False "link" [("linkend", drop 1 src)]
               else inTags False "ulink" [("url", src)]) $

@@ -2,19 +2,19 @@
 module Tests.Readers.Markdown (tests) where
 
 import Text.Pandoc.Definition
+import Text.Pandoc.Shared ( scrubStrTag )
 import Test.Framework
 import Tests.Helpers
 import Tests.Arbitrary()
-import Text.Pandoc.Builder
 import qualified Data.Set as Set
 -- import Text.Pandoc.Shared ( normalize )
 import Text.Pandoc
 
 markdown :: String -> Pandoc
-markdown = readMarkdown def
+markdown = scrubStrTag . readMarkdown def
 
 markdownSmart :: String -> Pandoc
-markdownSmart = readMarkdown def { readerSmart = True }
+markdownSmart = scrubStrTag . readMarkdown def { readerSmart = True }
 
 infix 4 =:
 (=:) :: ToString c
@@ -23,7 +23,7 @@ infix 4 =:
 
 testBareLink :: (String, Inlines) -> Test
 testBareLink (inp, ils) =
-  test (readMarkdown def{ readerExtensions =
+  test (scrubStrTag . readMarkdown def{ readerExtensions =
              Set.fromList [Ext_autolink_bare_uris, Ext_raw_html] })
        inp (inp, doc $ para ils)
 
@@ -202,7 +202,7 @@ tests = [ testGroup "inline code"
             =?> para (note (para "See [^1]"))
           ]
         , testGroup "lhs"
-          [ test (readMarkdown def{ readerExtensions = Set.insert
+          [ test (scrubStrTag . readMarkdown def{ readerExtensions = Set.insert
                        Ext_literate_haskell $ readerExtensions def })
               "inverse bird tracks and html" $
               "> a\n\n< b\n\n<div>\n"
@@ -211,6 +211,16 @@ tests = [ testGroup "inline code"
                   codeBlockWith ("",["sourceCode","haskell"],[]) "b"
                   <>
                   rawBlock "html" "<div>\n\n"
+          ]
+        , testGroup "reference links"
+          [ test (scrubStrTag . readMarkdown def{ readerExtensions = Set.insert
+                       Ext_implicit_header_references $ readerExtensions def })
+              "implicit header reference" $
+              "## Foo ##\n\n[Foo]. [Foo][]."
+              =?> headerWith ("foo", [], []) 2 "Foo"
+                  <>
+                  para (link "#foo" "" "Foo" <> "." <> space
+                        <> link "#foo" "" "Foo" <> ".")
           ]
 -- the round-trip properties frequently fail
 --        , testGroup "round trip"

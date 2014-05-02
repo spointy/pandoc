@@ -129,7 +129,7 @@ plainify t =
         $ Pandoc nullMeta [Plain $ walk removeNote t]
 
 removeNote :: Inline -> Inline
-removeNote (Note _) = Str ""
+removeNote (Note _) = Str "" ()
 removeNote x        = x
 
 toId :: FilePath -> String
@@ -853,7 +853,8 @@ correlateRefs chapterHeaderLevel bs =
 -- by correlateRefs.
 replaceRefs :: [(String,String)] -> [Block] -> [Block]
 replaceRefs refTable = walk replaceOneRef
-  where replaceOneRef x@(Link lab ('#':xs,tit)) =
+  where replaceOneRef :: Inline -> Inline
+        replaceOneRef x@(Link lab ('#':xs,tit)) =
           case lookup xs refTable of
                 Just url -> Link lab (url,tit)
                 Nothing  -> x

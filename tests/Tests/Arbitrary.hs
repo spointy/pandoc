@@ -38,7 +38,7 @@ arbInlines n = listOf1 (arbInline n) `suchThat` (not . startsWithSpace)
 -- restrict to 3 levels of nesting max; otherwise we get
 -- bogged down in indefinitely large structures
 arbInline :: Int -> Gen Inline
-arbInline n = frequency $ [ (60, liftM Str realString)
+arbInline n = frequency $ [ (60, liftM2 Str realString (return ()))
                           , (60, return Space)
                           , (10, liftM2 Code arbAttr realString)
                           , (5,  elements [ RawInline (Format "html") "<a id=\"eek\">"

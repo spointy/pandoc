@@ -321,7 +321,7 @@ inlineListToRST lst =
         insertBS (x:ys) = x : insertBS ys
         insertBS [] = []
         surroundComplex :: Inline -> Inline -> Bool
-        surroundComplex (Str s@(_:_)) (Str s'@(_:_)) =
+        surroundComplex (Str s@(_:_) _) (Str s'@(_:_) _) =
           case (last s, head s') of
              ('\'','\'') -> True
              ('"','"')   -> True
@@ -333,12 +333,12 @@ inlineListToRST lst =
         okAfterComplex :: Inline -> Bool
         okAfterComplex Space = True
         okAfterComplex LineBreak = True
-        okAfterComplex (Str (c:_)) = isSpace c || c `elem` "-.,:;!?\\/'\")]}>–—"
+        okAfterComplex (Str (c:_) _) = isSpace c || c `elem` "-.,:;!?\\/'\")]}>–—"
         okAfterComplex _ = False
         okBeforeComplex :: Inline -> Bool
         okBeforeComplex Space = True
         okBeforeComplex LineBreak = True
-        okBeforeComplex (Str (c:_)) = isSpace c || c `elem` "-:/'\"<([{–—"
+        okBeforeComplex (Str (c:_) _) = isSpace c || c `elem` "-:/'\"<([{–—"
         okBeforeComplex _ = False
         isComplex :: Inline -> Bool
         isComplex (Emph _) = True
@@ -381,7 +381,7 @@ inlineToRST (Quoted DoubleQuote lst) = do
 inlineToRST (Cite _  lst) =
   inlineListToRST lst
 inlineToRST (Code _ str) = return $ "``" <> text str <> "``"
-inlineToRST (Str str) = return $ text $ escapeString str
+inlineToRST (Str str _) = return $ text $ escapeString str
 inlineToRST (Math t str) = do
   modify $ \st -> st{ stHasMath = True }
   return $ if t == InlineMath
@@ -396,7 +396,7 @@ inlineToRST (RawInline f x)
 inlineToRST (LineBreak) = return cr -- there's no line break in RST (see Para)
 inlineToRST Space = return space
 -- autolink
-inlineToRST (Link [Str str] (src, _))
+inlineToRST (Link [Str str _] (src, _))
   | isURI src &&
     if "mailto:" `isPrefixOf` src
        then src == escapeURI ("mailto:" ++ str)
@@ -437,8 +437,8 @@ registerImage alt (src,tit) mbtarget = do
   txt <- case lookup alt pics of
                Just (s,t,mbt) | (s,t,mbt) == (src,tit,mbtarget) -> return alt
                _ -> do
-                 let alt' = if null alt || alt == [Str ""]
-                               then [Str $ "image" ++ show (length pics)]
+                 let alt' = if null alt || fmap scrubStrTag alt == [Str "" ()]
+                               then [Str ("image" ++ show (length pics)) ()]
                                else alt
                  modify $ \st -> st { stImages =
                         (alt', (src,tit, mbtarget)):stImages st }

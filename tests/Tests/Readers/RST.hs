@@ -5,12 +5,12 @@ import Text.Pandoc.Definition
 import Test.Framework
 import Tests.Helpers
 import Tests.Arbitrary()
-import Text.Pandoc.Builder
+import Text.Pandoc.Shared (scrubStrTag)
 import Text.Pandoc
 import Data.Monoid (mempty)
 
 rst :: String -> Pandoc
-rst = readRST def{ readerStandalone = True }
+rst = scrubStrTag . readRST def{ readerStandalone = True }
 
 infix 4 =:
 (=:) :: ToString c
@@ -19,8 +19,8 @@ infix 4 =:
 
 tests :: [Test]
 tests = [ "line block with blank line" =:
-          "| a\n|\n|  b" =?> para (str "a") <>
-                             para (str "\160b")
+          "| a\n|\n|  b" =?> (para (str "a") <>
+                              para (str "\160b") :: Blocks)
         , "field list" =: unlines
              [ "para"
              , ""
@@ -44,7 +44,7 @@ tests = [ "line block with blank line" =:
                                 , (str "Indentation", [para "Since the field marker may be quite long, the second and subsequent lines of the field body do not have to line up with the first line, but they must be indented relative to the field name marker, and they must line up with each other."])
                                 , (str "Parameter i", [para "integer"])
                                 , (str "Final", [para "item on two lines"])
-                              ])
+                              ] :: Pandoc)
         , "initial field list" =: unlines
              [ "====="
              , "Title"
@@ -62,10 +62,11 @@ tests = [ "line block with blank line" =:
         , "URLs with following punctuation" =:
           ("http://google.com, http://yahoo.com; http://foo.bar.baz.\n" ++
            "http://foo.bar/baz_(bam) (http://foo.bar)") =?>
-          para (link "http://google.com" "" "http://google.com" <> ", " <>
-                link "http://yahoo.com" "" "http://yahoo.com" <> "; " <>
-                link "http://foo.bar.baz" "" "http://foo.bar.baz" <> ". " <>
-                link "http://foo.bar/baz_(bam)" "" "http://foo.bar/baz_(bam)"
-                <> " (" <> link "http://foo.bar" "" "http://foo.bar" <> ")")
+          (para (link "http://google.com" "" "http://google.com" <> ", " <>
+                 link "http://yahoo.com" "" "http://yahoo.com" <> "; " <>
+                 link "http://foo.bar.baz" "" "http://foo.bar.baz" <> ". " <>
+                 link "http://foo.bar/baz_(bam)" "" "http://foo.bar/baz_(bam)"
+                 <> " (" <> link "http://foo.bar" "" "http://foo.bar" <> ")")
+           :: Blocks)
         ]
 

@@ -1,6 +1,7 @@
+{-# LANGUAGE TypeFamilies #-}
 module Text.Pandoc.Readers.DocBook ( readDocBook ) where
 import Data.Char (toUpper)
-import Text.Pandoc.Shared (safeRead)
+import Text.Pandoc.Shared (safeRead, unscrubStrTag)
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
 import Text.Pandoc.Builder
@@ -505,8 +506,8 @@ data DBState = DBState{ dbSectionLevel :: Int
                       , dbFigureTitle  :: Inlines
                       } deriving Show
 
-readDocBook :: ReaderOptions -> String -> Pandoc
-readDocBook _ inp  = Pandoc (dbMeta st') (toList $ mconcat bs)
+readDocBook :: ReaderOptions -> String -> Pandoc' [SrcSpan]
+readDocBook _ inp  = unscrubStrTag $ Pandoc (dbMeta st') (toList $ mconcat bs)
   where (bs, st') = runState (mapM parseBlock $ normalizeTree $ parseXML inp)
                              DBState{ dbSectionLevel = 0
                                     , dbQuoteType = DoubleQuote
@@ -572,10 +573,11 @@ checkInMeta p = do
 
 
 
-addMeta :: ToMetaValue a => String -> a -> DB ()
+addMeta :: (ToMetaValue a, TMVTag a ~ ()) => String -> a -> DB ()
 addMeta field val = modify (setMeta field val)
 
 instance HasMeta DBState where
+  type HMTag DBState = ()
   setMeta field v s =  s {dbMeta = setMeta field v (dbMeta s)}
   deleteMeta field s = s {dbMeta = deleteMeta field (dbMeta s)}
 

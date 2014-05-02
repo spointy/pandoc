@@ -90,11 +90,11 @@ plainify = walk go
         go (Superscript xs) = SmallCaps xs
         go (Subscript xs) = SmallCaps xs
         go (SmallCaps xs) = SmallCaps xs
-        go (Code _ s) = Str s
-        go (Math _ s) = Str s
-        go (RawInline _ _) = Str ""
+        go (Code _ s) = Str s ()
+        go (Math _ s) = Str s ()
+        go (RawInline _ _) = Str "" ()
         go (Link xs _) = SmallCaps xs
-        go (Image xs _) = SmallCaps $ [Str "["] ++ xs ++ [Str "]"]
+        go (Image xs _) = SmallCaps $ [Str "[" ()] ++ xs ++ [Str "]" ()]
         go (Cite _ cits) = SmallCaps cits
         go x = x
 
@@ -637,10 +637,10 @@ getReference label (src, tit) = do
     Nothing       -> do
       let label' = case find ((== label) . fst) (stRefs st) of
                       Just _ -> -- label is used; generate numerical label
-                             case find (\n -> notElem [Str (show n)]
+                             case find (\n -> notElem [Str (show n) ()]
                                                       (map fst (stRefs st)))
                                        [1..(10000 :: Integer)] of
-                                  Just x  -> [Str (show x)]
+                                  Just x  -> [Str (show x) ()]
                                   Nothing -> error "no unique label"
                       Nothing -> label
       modify (\s -> s{ stRefs = (label', (src,tit)) : stRefs st })
@@ -652,8 +652,8 @@ inlineListToMarkdown opts lst =
   mapM (inlineToMarkdown opts) lst >>= return . cat
 
 escapeSpaces :: Inline -> Inline
-escapeSpaces (Str s) = Str $ substitute " " "\\ " s
-escapeSpaces Space = Str "\\ "
+escapeSpaces (Str s src) = Str (substitute " " "\\ " s) src
+escapeSpaces Space = Str "\\ " ()
 escapeSpaces x = x
 
 -- | Convert Pandoc inline element to markdown.
@@ -705,7 +705,7 @@ inlineToMarkdown opts (Code attr str) =
                       then attrsToMarkdown attr
                       else empty
   in  return $ text (marker ++ spacer ++ str ++ spacer ++ marker) <> attrs
-inlineToMarkdown _ (Str str) = do
+inlineToMarkdown _ (Str str _) = do
   st <- get
   if stPlain st
      then return $ text str
@@ -762,8 +762,8 @@ inlineToMarkdown opts (Cite (c:cs) lst)
            sdoc <- inlineListToMarkdown opts sinlines
            let k' = text (modekey m ++ "@" ++ k)
                r = case sinlines of
-                        Str (y:_):_ | y `elem` ",;]@" -> k' <> sdoc
-                        _                             -> k' <+> sdoc
+                        Str (y:_) _:_ | y `elem` ",;]@" -> k' <> sdoc
+                        _                               -> k' <+> sdoc
            return $ pdoc <+> r
         modekey SuppressAuthor = "-"
         modekey _              = ""
@@ -775,8 +775,8 @@ inlineToMarkdown opts (Link txt (src, tit)) = do
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   let useAuto = isURI src &&
                 case txt of
-                      [Str s] | escapeURI s == srcSuffix -> True
-                      _                                  -> False
+                      [Str s _] | escapeURI s == srcSuffix -> True
+                      _                                    -> False
   let useRefLinks = writerReferenceLinks opts && not useAuto
   ref <- if useRefLinks then getReference txt (src, tit) else return []
   reftext <- inlineListToMarkdown opts ref
@@ -791,9 +791,9 @@ inlineToMarkdown opts (Link txt (src, tit)) = do
                       else "[" <> linktext <> "](" <>
                            text src <> linktitle <> ")"
 inlineToMarkdown opts (Image alternate (source, tit)) = do
-  let txt = if null alternate || alternate == [Str source]
+  let txt = if null alternate || fmap scrubStrTag alternate == [Str source ()]
                                  -- to prevent autolinks
-               then [Str ""]
+               then [Str "" ()]
                else alternate
   linkPart <- inlineToMarkdown opts (Link txt (source, tit))
   return $ "!" <> linkPart

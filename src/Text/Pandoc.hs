@@ -186,14 +186,14 @@ parseFormatSpec = parse formatSpec ""
                         _    -> Set.insert ext
 
 -- auxiliary function for readers:
-markdown :: ReaderOptions -> String -> IO Pandoc
+markdown :: ReaderOptions -> String -> IO (Pandoc' [SrcSpan])
 markdown o s = do
   let (doc, warnings) = readMarkdownWithWarnings o s
   mapM_ warn warnings
   return doc
 
 -- | Association list of formats and readers.
-readers :: [(String, ReaderOptions -> String -> IO Pandoc)]
+readers :: [(String, ReaderOptions -> String -> IO (Pandoc' [SrcSpan]))]
 readers = [ ("native"       , \_ s -> return $ readNative s)
            ,("json"         , \o s -> return $ readJSON o s)
            ,("markdown"     , markdown)
@@ -279,7 +279,7 @@ getDefaultExtensions "textile"         = Set.fromList [Ext_auto_identifiers, Ext
 getDefaultExtensions _                 = Set.fromList [Ext_auto_identifiers]
 
 -- | Retrieve reader based on formatSpec (format+extensions).
-getReader :: String -> Either String (ReaderOptions -> String -> IO Pandoc)
+getReader :: String -> Either String (ReaderOptions -> String -> IO (Pandoc' [SrcSpan]))
 getReader s =
   case parseFormatSpec s of
        Left e  -> Left $ intercalate "\n" $ [m | Message m <- errorMessages e]
@@ -314,7 +314,7 @@ class ToJSONFilter a => ToJsonFilter a
   where toJsonFilter :: a -> IO ()
         toJsonFilter = toJSONFilter
 
-readJSON :: ReaderOptions -> String -> Pandoc
+readJSON :: FromJSON a => ReaderOptions -> String -> Pandoc' a
 readJSON _ = either error id . eitherDecode' . UTF8.fromStringLazy
 
 writeJSON :: WriterOptions -> Pandoc -> String

@@ -51,12 +51,13 @@ TODO : refactor common patterns across readers :
 
 module Text.Pandoc.Readers.Textile ( readTextile) where
 import Text.Pandoc.Definition
-import Text.Pandoc.Builder (Inlines, Blocks, trimInlines)
+import Text.Pandoc.Builder (Inlines', Blocks', trimInlines)
 import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.Options
 import Text.Pandoc.Parsing
 import Text.Pandoc.Readers.HTML ( htmlTag, isInlineTag, isBlockTag )
 import Text.Pandoc.Readers.LaTeX ( rawLaTeXInline, rawLaTeXBlock )
+import Text.Pandoc.Shared ( scrubStrTag )
 import Text.HTML.TagSoup (parseTags, innerText, fromAttrib, Tag(..))
 import Text.HTML.TagSoup.Match
 import Data.List ( intercalate )
@@ -68,13 +69,13 @@ import Data.Monoid
 -- | Parse a Textile text and return a Pandoc document.
 readTextile :: ReaderOptions -- ^ Reader options
             -> String       -- ^ String to parse (assuming @'\n'@ line endings)
-            -> Pandoc
+            -> Pandoc' [SrcSpan]
 readTextile opts s =
   (readWith parseTextile) def{ stateOptions = opts } (s ++ "\n\n")
 
 
 -- | Generate a Pandoc ADT from a textile document
-parseTextile :: Parser [Char] ParserState Pandoc
+parseTextile :: Parser [Char] ParserState (Pandoc' [SrcSpan])
 parseTextile = do
   -- textile allows raw HTML and does smart punctuation by default
   oldOpts <- stateOptions `fmap` getState
@@ -115,11 +116,11 @@ noteBlock = try $ do
   return $ replicate (sourceLine endPos - sourceLine startPos) '\n'
 
 -- | Parse document blocks
-parseBlocks :: Parser [Char] ParserState Blocks
+parseBlocks :: Parser [Char] ParserState (Blocks' [SrcSpan])
 parseBlocks = mconcat <$> manyTill block eof
 
 -- | Block parsers list tried in definition order
-blockParsers :: [Parser [Char] ParserState Blocks]
+blockParsers :: [Parser [Char] ParserState (Blocks' [SrcSpan])]
 blockParsers = [ codeBlock
                , header
                , blockQuote
@@ -133,29 +134,29 @@ blockParsers = [ codeBlock
                , endBlock
                ]
 
-endBlock :: Parser [Char] ParserState Blocks
+endBlock :: Parser [Char] ParserState (Blocks' [SrcSpan])
 endBlock = string "\n\n" >> return mempty
 -- | Any block in the order of definition of blockParsers
-block :: Parser [Char] ParserState Blocks
+block :: Parser [Char] ParserState (Blocks' [SrcSpan])
 block = choice blockParsers <?> "block"
 
-commentBlock :: Parser [Char] ParserState Blocks
+commentBlock :: Parser [Char] ParserState (Blocks' [SrcSpan])
 commentBlock = try $ do
   string "###."
   manyTill anyLine blanklines
   return mempty
 
-codeBlock :: Parser [Char] ParserState Blocks
+codeBlock :: Parser [Char] ParserState (Blocks' [SrcSpan])
 codeBlock = codeBlockBc <|> codeBlockPre
 
-codeBlockBc :: Parser [Char] ParserState Blocks
+codeBlockBc :: Parser [Char] ParserState (Blocks' [SrcSpan])
 codeBlockBc = try $ do
   string "bc. "
   contents <- manyTill anyLine blanklines
   return $ B.codeBlock (unlines contents)
 
 -- | Code Blocks in Textile are between <pre> and </pre>
-codeBlockPre :: Parser [Char] ParserState Blocks
+codeBlockPre :: Parser [Char] ParserState (Blocks' [SrcSpan])
 codeBlockPre = try $ do
   (t@(TagOpen _ attrs),_) <- htmlTag (tagOpen (=="pre") (const True))
   result' <- (innerText . parseTags) `fmap` -- remove internal tags
@@ -175,7 +176,7 @@ codeBlockPre = try $ do
   return $ B.codeBlockWith (ident,classes,kvs) result'''
 
 -- | Header of the form "hN. content" with N in 1..6
-header :: Parser [Char] ParserState Blocks
+header :: Parser [Char] ParserState (Blocks' [SrcSpan])
 header = try $ do
   char 'h'
   level <- digitToInt <$> oneOf "123456"
@@ -187,14 +188,14 @@ header = try $ do
   return $ B.headerWith attr' level name
 
 -- | Blockquote of the form "bq. content"
-blockQuote :: Parser [Char] ParserState Blocks
+blockQuote :: Parser [Char] ParserState (Blocks' [SrcSpan])
 blockQuote = try $ do
   string "bq" >> attributes >> char '.' >> whitespace
   B.blockQuote <$> para
 
 -- Horizontal rule
 
-hrule :: Parser [Char] st Blocks
+hrule :: Parser [Char] st (Blocks' [SrcSpan])
 hrule = try $ do
   skipSpaces
   start <- oneOf "-*"
@@ -209,39 +210,39 @@ hrule = try $ do
 -- | Can be a bullet list or an ordered list. This implementation is
 -- strict in the nesting, sublist must start at exactly "parent depth
 -- plus one"
-anyList :: Parser [Char] ParserState Blocks
+anyList :: Parser [Char] ParserState (Blocks' [SrcSpan])
 anyList = try $ anyListAtDepth 1 <* blanklines
 
 -- | This allow one type of list to be nested into an other type,
 -- provided correct nesting
-anyListAtDepth :: Int -> Parser [Char] ParserState Blocks
+anyListAtDepth :: Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 anyListAtDepth depth = choice [ bulletListAtDepth depth,
                                 orderedListAtDepth depth,
                                 definitionList ]
 
 -- | Bullet List of given depth, depth being the number of leading '*'
-bulletListAtDepth :: Int -> Parser [Char] ParserState Blocks
+bulletListAtDepth :: Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 bulletListAtDepth depth = try $ B.bulletList  <$> many1 (bulletListItemAtDepth depth)
 
 -- | Bullet List Item of given depth, depth being the number of
 -- leading '*'
-bulletListItemAtDepth :: Int -> Parser [Char] ParserState Blocks
+bulletListItemAtDepth :: Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 bulletListItemAtDepth = genericListItemAtDepth '*'
 
 -- | Ordered List of given depth, depth being the number of
 -- leading '#'
-orderedListAtDepth :: Int -> Parser [Char] ParserState Blocks
+orderedListAtDepth :: Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 orderedListAtDepth depth = try $ do
   items <- many1 (orderedListItemAtDepth depth)
   return $ B.orderedList items
 
 -- | Ordered List Item of given depth, depth being the number of
 -- leading '#'
-orderedListItemAtDepth :: Int -> Parser [Char] ParserState Blocks
+orderedListItemAtDepth :: Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 orderedListItemAtDepth = genericListItemAtDepth '#'
 
 -- | Common implementation of list items
-genericListItemAtDepth :: Char -> Int -> Parser [Char] ParserState Blocks
+genericListItemAtDepth :: Char -> Int -> Parser [Char] ParserState (Blocks' [SrcSpan])
 genericListItemAtDepth c depth = try $ do
   count depth (char c) >> attributes >> whitespace
   p <- mconcat <$> many listInline
@@ -250,14 +251,14 @@ genericListItemAtDepth c depth = try $ do
   return $ (B.plain p) <> sublist
 
 -- | A definition list is a set of consecutive definition items
-definitionList :: Parser [Char] ParserState Blocks
+definitionList :: Parser [Char] ParserState (Blocks' [SrcSpan])
 definitionList = try $ B.definitionList <$> many1 definitionListItem
 
 -- | List start character.
 listStart :: Parser [Char] st Char
 listStart = oneOf "*#-"
 
-listInline :: Parser [Char] ParserState Inlines
+listInline :: Parser [Char] ParserState (Inlines' [SrcSpan])
 listInline = try (notFollowedBy newline >> inline)
          <|> try (endline <* notFollowedBy listStart)
 
@@ -265,16 +266,16 @@ listInline = try (notFollowedBy newline >> inline)
 -- the term defined, then spaces and ":=". The definition follows, on
 -- the same single line, or spaned on multiple line, after a line
 -- break.
-definitionListItem :: Parser [Char] ParserState (Inlines, [Blocks])
+definitionListItem :: Parser [Char] ParserState ((Inlines' [SrcSpan]), [(Blocks' [SrcSpan])])
 definitionListItem = try $ do
   string "- "
   term <- mconcat <$> many1Till inline (try (whitespace >> string ":="))
   def' <- multilineDef <|> inlineDef
   return (term, def')
-  where inlineDef :: Parser [Char] ParserState [Blocks]
+  where inlineDef :: Parser [Char] ParserState [(Blocks' [SrcSpan])]
         inlineDef = liftM (\d -> [B.plain d])
                     $ optional whitespace >> (trimInlines . mconcat <$> many listInline) <* newline
-        multilineDef :: Parser [Char] ParserState [Blocks]
+        multilineDef :: Parser [Char] ParserState [(Blocks' [SrcSpan])]
         multilineDef = try $ do
           optional whitespace >> newline
           s <- many1Till anyChar (try (string "=:" >> newline))
@@ -291,50 +292,50 @@ blockBreak = try (newline >> blanklines >> return ()) <|>
 -- raw content
 
 -- | A raw Html Block, optionally followed by blanklines
-rawHtmlBlock :: Parser [Char] ParserState Blocks
+rawHtmlBlock :: Parser [Char] ParserState (Blocks' [SrcSpan])
 rawHtmlBlock = try $ do
   (_,b) <- htmlTag isBlockTag
   optional blanklines
   return $ B.rawBlock "html" b
 
 -- | Raw block of LaTeX content
-rawLaTeXBlock' :: Parser [Char] ParserState Blocks
+rawLaTeXBlock' :: Parser [Char] ParserState (Blocks' [SrcSpan])
 rawLaTeXBlock' = do
   guardEnabled Ext_raw_tex
   B.rawBlock "latex" <$> (rawLaTeXBlock <* spaces)
 
 
 -- | In textile, paragraphs are separated by blank lines.
-para :: Parser [Char] ParserState Blocks
+para :: Parser [Char] ParserState (Blocks' [SrcSpan])
 para = B.para . trimInlines . mconcat <$> manyTill inline blockBreak
 
 -- Tables
 
 -- | A table cell spans until a pipe |
-tableCell :: Parser [Char] ParserState Blocks
+tableCell :: Parser [Char] ParserState (Blocks' [SrcSpan])
 tableCell = do
   c <- many1 (noneOf "|\n")
   content <- trimInlines . mconcat <$> parseFromString (many1 inline) c
   return $ B.plain content
 
 -- | A table row is made of many table cells
-tableRow :: Parser [Char] ParserState [Blocks]
+tableRow :: Parser [Char] ParserState [(Blocks' [SrcSpan])]
 tableRow = try $ ( char '|' *>
   (endBy1 tableCell (optional blankline *> char '|')) <* newline)
 
 -- | Many table rows
-tableRows :: Parser [Char] ParserState [[Blocks]]
+tableRows :: Parser [Char] ParserState [[(Blocks' [SrcSpan])]]
 tableRows = many1 tableRow
 
 -- | Table headers are made of cells separated by a tag "|_."
-tableHeaders :: Parser [Char] ParserState [Blocks]
+tableHeaders :: Parser [Char] ParserState [(Blocks' [SrcSpan])]
 tableHeaders = let separator = (try $ string "|_.") in
   try $ ( separator *> (sepBy1 tableCell separator) <* char '|' <* newline )
 
 -- | A table with an optional header. Current implementation can
 -- handle tables with and without header, but will parse cells
 -- alignment attributes as content.
-table :: Parser [Char] ParserState Blocks
+table :: Parser [Char] ParserState (Blocks' [SrcSpan])
 table = try $ do
   headers <- option mempty tableHeaders
   rows <- tableRows
@@ -349,8 +350,8 @@ table = try $ do
 -- | Blocks like 'p' and 'table' do not need explicit block tag.
 -- However, they can be used to set HTML/CSS attributes when needed.
 maybeExplicitBlock :: String  -- ^ block tag name
-                    -> Parser [Char] ParserState Blocks -- ^ implicit block
-                    -> Parser [Char] ParserState Blocks
+                    -> Parser [Char] ParserState (Blocks' [SrcSpan]) -- ^ implicit block
+                    -> Parser [Char] ParserState (Blocks' [SrcSpan])
 maybeExplicitBlock name blk = try $ do
   optional $ try $ string name >> attributes >> char '.' >>
     optional whitespace >> optional endline
@@ -364,12 +365,12 @@ maybeExplicitBlock name blk = try $ do
 
 
 -- | Any inline element
-inline :: Parser [Char] ParserState Inlines
+inline :: Parser [Char] ParserState (Inlines' [SrcSpan])
 inline = do
     choice inlineParsers <?> "inline"
 
 -- | Inline parsers tried in order
-inlineParsers :: [Parser [Char] ParserState Inlines]
+inlineParsers :: [Parser [Char] ParserState (Inlines' [SrcSpan])]
 inlineParsers = [ inlineMarkup
                 , str
                 , whitespace
@@ -389,7 +390,7 @@ inlineParsers = [ inlineMarkup
                 ]
 
 -- | Inline markups
-inlineMarkup :: Parser [Char] ParserState Inlines
+inlineMarkup :: Parser [Char] ParserState (Inlines' [SrcSpan])
 inlineMarkup = choice [ simpleInline (string "??") (B.cite [])
                       , simpleInline (string "**") B.strong
                       , simpleInline (string "__") B.emph
@@ -403,29 +404,29 @@ inlineMarkup = choice [ simpleInline (string "??") (B.cite [])
                       ]
 
 -- | Trademark, registered, copyright
-mark :: Parser [Char] st Inlines
+mark :: Parser [Char] st (Inlines' [SrcSpan])
 mark = try $ char '(' >> (try tm <|> try reg <|> copy)
 
-reg :: Parser [Char] st Inlines
+reg :: Parser [Char] st (Inlines' [SrcSpan])
 reg = do
   oneOf "Rr"
   char ')'
   return $ B.str "\174"
 
-tm :: Parser [Char] st Inlines
+tm :: Parser [Char] st (Inlines' [SrcSpan])
 tm = do
   oneOf "Tt"
   oneOf "Mm"
   char ')'
   return $ B.str "\8482"
 
-copy :: Parser [Char] st Inlines
+copy :: Parser [Char] st (Inlines' [SrcSpan])
 copy = do
   oneOf "Cc"
   char ')'
   return $ B.str "\169"
 
-note :: Parser [Char] ParserState Inlines
+note :: Parser [Char] ParserState (Inlines' [SrcSpan])
 note = try $ do
   ref <- (char '[' *> many1 digit <* char ']')
   notes <- stateNotes <$> getState
@@ -464,7 +465,7 @@ wordChunk = try $ do
   return $ hd:tl
 
 -- | Any string
-str :: Parser [Char] ParserState Inlines
+str :: Parser [Char] ParserState (Inlines' [SrcSpan])
 str = do
   baseStr <- hyphenedWords
   -- RedCloth compliance : if parsed word is uppercase and immediatly
@@ -477,27 +478,27 @@ str = do
   return $ B.str fullStr
 
 -- | Some number of space chars
-whitespace :: Parser [Char] ParserState Inlines
+whitespace :: Parser [Char] ParserState (Inlines' [SrcSpan])
 whitespace = many1 spaceChar >> return B.space <?> "whitespace"
 
 -- | In Textile, an isolated endline character is a line break
-endline :: Parser [Char] ParserState Inlines
+endline :: Parser [Char] ParserState (Inlines' [SrcSpan])
 endline = try $ do
   newline >> notFollowedBy blankline
   return B.linebreak
 
-rawHtmlInline :: Parser [Char] ParserState Inlines
+rawHtmlInline :: Parser [Char] ParserState (Inlines' [SrcSpan])
 rawHtmlInline = B.rawInline "html" . snd <$> htmlTag isInlineTag
 
 -- | Raw LaTeX Inline
-rawLaTeXInline' :: Parser [Char] ParserState Inlines
+rawLaTeXInline' :: Parser [Char] ParserState (Inlines' [SrcSpan])
 rawLaTeXInline' = try $ do
   guardEnabled Ext_raw_tex
   B.singleton <$> rawLaTeXInline
 
 -- | Textile standard link syntax is "label":target. But we
 -- can also have ["label":target].
-link :: Parser [Char] ParserState Inlines
+link :: Parser [Char] ParserState (Inlines' [SrcSpan])
 link = try $ do
   bracketed <- (True <$ char '[') <|> return False
   char '"' *> notFollowedBy (oneOf " \t\n\r")
@@ -509,13 +510,13 @@ link = try $ do
                 else lookAhead $ space <|>
                        try (oneOf "!.,;:" *> (space <|> newline))
   url <- manyTill nonspaceChar stop
-  let name' = if B.toList name == [Str "$"] then B.str url else name
+  let name' = if fmap scrubStrTag (B.toList name) == [Str "$" ()] then B.str url else name
   return $ if attr == nullAttr
               then B.link url "" name'
               else B.spanWith attr $ B.link url "" name'
 
 -- | image embedding
-image :: Parser [Char] ParserState Inlines
+image :: Parser [Char] ParserState (Inlines' [SrcSpan])
 image = try $ do
   char '!' >> notFollowedBy space
   src <- manyTill anyChar (lookAhead $ oneOf "!(")
@@ -523,29 +524,29 @@ image = try $ do
   char '!'
   return $ B.image src alt (B.str alt)
 
-escapedInline :: Parser [Char] ParserState Inlines
+escapedInline :: Parser [Char] ParserState (Inlines' [SrcSpan])
 escapedInline = escapedEqs <|> escapedTag
 
-escapedEqs :: Parser [Char] ParserState Inlines
+escapedEqs :: Parser [Char] ParserState (Inlines' [SrcSpan])
 escapedEqs = B.str <$> (try $ string "==" *> manyTill anyChar (try $ string "=="))
 
 -- | literal text escaped btw <notextile> tags
-escapedTag :: Parser [Char] ParserState Inlines
+escapedTag :: Parser [Char] ParserState (Inlines' [SrcSpan])
 escapedTag = B.str <$>
   (try $ string "<notextile>" *> manyTill anyChar (try $ string "</notextile>"))
 
 -- | Any special symbol defined in wordBoundaries
-symbol :: Parser [Char] ParserState Inlines
+symbol :: Parser [Char] ParserState (Inlines' [SrcSpan])
 symbol = B.str . singleton <$> (oneOf wordBoundaries <|> oneOf markupChars)
 
 -- | Inline code
-code :: Parser [Char] ParserState Inlines
+code :: Parser [Char] ParserState (Inlines' [SrcSpan])
 code = code1 <|> code2
 
-code1 :: Parser [Char] ParserState Inlines
+code1 :: Parser [Char] ParserState (Inlines' [SrcSpan])
 code1 = B.code <$> surrounded (char '@') anyChar
 
-code2 :: Parser [Char] ParserState Inlines
+code2 :: Parser [Char] ParserState (Inlines' [SrcSpan])
 code2 = do
   htmlTag (tagOpen (=="tt") null)
   B.code <$> manyTill anyChar (try $ htmlTag $ tagClose (=="tt"))
@@ -586,13 +587,13 @@ surrounded border = enclosed (border *> notFollowedBy (oneOf " \t\n\r")) (try bo
 
 
 simpleInline :: Parser [Char] ParserState t           -- ^ surrounding parser
-                -> (Inlines -> Inlines)       -- ^ Inline constructor
-                -> Parser [Char] ParserState Inlines   -- ^ content parser (to be used repeatedly)
+                -> ((Inlines' [SrcSpan]) -> (Inlines' [SrcSpan]))       -- ^ Inline constructor
+                -> Parser [Char] ParserState (Inlines' [SrcSpan])   -- ^ content parser (to be used repeatedly)
 simpleInline border construct = groupedSimpleInline border construct <|> ungroupedSimpleInline border construct
 
 ungroupedSimpleInline :: Parser [Char] ParserState t           -- ^ surrounding parser
-                -> (Inlines -> Inlines)       -- ^ Inline constructor
-                -> Parser [Char] ParserState Inlines   -- ^ content parser (to be used repeatedly)
+                -> ((Inlines' [SrcSpan]) -> (Inlines' [SrcSpan]))       -- ^ Inline constructor
+                -> Parser [Char] ParserState (Inlines' [SrcSpan])   -- ^ content parser (to be used repeatedly)
 ungroupedSimpleInline border construct = try $ do
   st <- getState
   pos <- getPosition
@@ -614,8 +615,8 @@ ungroupedSimpleInline border construct = try $ do
               else result
 
 groupedSimpleInline :: Parser [Char] ParserState t
-                  -> (Inlines -> Inlines)
-                  -> Parser [Char] ParserState Inlines
+                  -> ((Inlines' [SrcSpan]) -> (Inlines' [SrcSpan]))
+                  -> Parser [Char] ParserState (Inlines' [SrcSpan])
 groupedSimpleInline border construct = try $ do
     char '['
     withQuoteContext InSingleQuote (simpleInline border construct) >>~ char ']'

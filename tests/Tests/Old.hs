@@ -10,6 +10,7 @@ import System.FilePath ( (</>), (<.>) )
 import System.Directory
 import System.Exit
 import Data.Algorithm.Diff
+import Text.Pandoc.Definition ( Pandoc )
 import Text.Pandoc.Shared ( normalize )
 import Text.Pandoc.Options
 import Text.Pandoc.Writers.Native ( writeNative )
@@ -158,7 +159,7 @@ lhsReaderTest :: String -> Test
 lhsReaderTest format =
   testWithNormalize normalizer "lhs" ["-r", format, "-w", "native"]
     ("lhs-test" <.> format) norm
-   where normalizer = writeNative def . normalize . readNative
+   where normalizer = writeNative def . normalize . (readNative :: String -> Pandoc)
          norm = if format == "markdown+lhs"
                    then "lhs-test-markdown.native"
                    else "lhs-test.native"

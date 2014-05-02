@@ -28,7 +28,7 @@ p_query :: (Eq a, Typeable a1, Monoid a, Walkable a1 Pandoc)
 p_query f d = everything mappend (mempty `mkQ` f) d == query f d
 
 inlineTrans :: Inline -> Inline
-inlineTrans (Str xs) = Str $ map toUpper xs
+inlineTrans (Str xs src) = Str (map toUpper xs) src
 inlineTrans (Emph xs) = Strong xs
 inlineTrans x = x
 
@@ -38,10 +38,9 @@ blockTrans (BlockQuote xs) = Div ("",["special"],[]) xs
 blockTrans x = x
 
 inlineQuery :: Inline -> String
-inlineQuery (Str xs) = xs
+inlineQuery (Str xs _) = xs
 inlineQuery _ = ""
 
 blockQuery :: Block -> [Int]
 blockQuery (Header lev _ _) = [lev]
 blockQuery _ = []
-

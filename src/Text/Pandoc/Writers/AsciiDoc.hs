@@ -344,7 +344,7 @@ inlineToAsciiDoc opts (Quoted DoubleQuote lst) = do
   return $ "``" <> contents <> "''"
 inlineToAsciiDoc _ (Code _ str) = return $
   text "`" <> text (escapeStringUsing (backslashEscapes "`") str) <> "`"
-inlineToAsciiDoc _ (Str str) = return $ text $ escapeString str
+inlineToAsciiDoc _ (Str str _) = return $ text $ escapeString str
 inlineToAsciiDoc _ (Math InlineMath str) =
   return $ "latexmath:[$" <> text str <> "$]"
 inlineToAsciiDoc _ (Math DisplayMath str) =
@@ -366,15 +366,15 @@ inlineToAsciiDoc opts (Link txt (src, _tit)) = do
                   else empty
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   let useAuto = case txt of
-                      [Str s] | escapeURI s == srcSuffix -> True
-                      _                                  -> False
+                      [Str s _] | escapeURI s == srcSuffix -> True
+                      _                                    -> False
   return $ if useAuto
               then text srcSuffix
               else prefix <> text src <> "[" <> linktext <> "]"
 inlineToAsciiDoc opts (Image alternate (src, tit)) = do
 -- image:images/logo.png[Company logo, title="blah"]
-  let txt = if (null alternate) || (alternate == [Str ""])
-               then [Str "image"]
+  let txt = if (null alternate) || (fmap scrubStrTag alternate == [Str "" ()])
+               then [Str "image" ()]
                else alternate
   linktext <- inlineListToAsciiDoc opts txt
   let linktitle = if null tit

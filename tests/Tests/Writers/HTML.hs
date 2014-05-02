@@ -29,15 +29,15 @@ infix 4 =:
 
 tests :: [Test]
 tests = [ testGroup "inline code"
-          [ "basic" =: code "@&" =?> "<code>@&amp;</code>"
-          , "haskell" =: codeWith ("",["haskell"],[]) ">>="
+          [ "basic" =: (code "@&" :: Inlines) =?> "<code>@&amp;</code>"
+          , "haskell" =: (codeWith ("",["haskell"],[]) ">>=" :: Inlines)
             =?> "<code class=\"haskell\">&gt;&gt;=</code>"
-          , "nolanguage" =: codeWith ("",["nolanguage"],[]) ">>="
+          , "nolanguage" =: (codeWith ("",["nolanguage"],[]) ">>=" :: Inlines)
             =?> "<code class=\"nolanguage\">&gt;&gt;=</code>"
           ]
         , testGroup "images"
           [ "alt with formatting" =:
-            image "/url" "title" ("my " <> emph "image")
+            (image "/url" "title" ("my " <> emph "image") :: Inlines)
             =?> "<img src=\"/url\" title=\"title\" alt=\"my image\" />"
           ]
         ]

@@ -2,7 +2,6 @@
 module Tests.Writers.Docbook (tests) where
 
 import Test.Framework
-import Text.Pandoc.Builder
 import Text.Pandoc
 import Tests.Helpers
 import Tests.Arbitrary()
@@ -38,7 +37,7 @@ lineblock_out =   "<literallayout>some text\n" ++
 
 tests :: [Test]
 tests = [ testGroup "line blocks"
-          [ "none"       =: para "This is a test"
+          [ "none"       =: (para "This is a test" :: Blocks)
                               =?> "<para>\n  This is a test\n</para>"
           , "basic"      =: lineblock
                               =?> lineblock_out

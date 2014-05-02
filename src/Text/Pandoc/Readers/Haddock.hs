@@ -16,12 +16,13 @@ import Text.Pandoc.Builder
 import Text.Pandoc.Options
 import Text.Pandoc.Readers.Haddock.Lex
 import Text.Pandoc.Readers.Haddock.Parse
+import Text.Pandoc.Shared ( unscrubStrTag )
 
 -- | Parse Haddock markup and return a 'Pandoc' document.
 readHaddock :: ReaderOptions -- ^ Reader options
             -> String        -- ^ String to parse
-            -> Pandoc
-readHaddock _ s = Pandoc nullMeta blocks
+            -> Pandoc' [SrcSpan]
+readHaddock _ s = Pandoc nullMeta (fmap unscrubStrTag blocks)
   where
     blocks = case parseParas (tokenise s (0,0)) of
         Left [] -> error "parse failure"

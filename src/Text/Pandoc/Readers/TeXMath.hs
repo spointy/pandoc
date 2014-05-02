@@ -39,7 +39,7 @@ readTeXMath' :: MathType
              -> String    -- ^ String to parse (assumes @'\n'@ line endings)
              -> [Inline]
 readTeXMath' mt inp = case texMathToPandoc dt inp of
-                           Left _    -> [Str (delim ++ inp ++ delim)]
+                           Left _    -> [Str (delim ++ inp ++ delim) ()]
                            Right res -> res
     where (dt, delim) = case mt of
                              DisplayMath -> (DisplayBlock, "$$")

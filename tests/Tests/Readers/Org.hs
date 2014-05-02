@@ -5,13 +5,13 @@ import Text.Pandoc.Definition
 import Test.Framework
 import Tests.Helpers
 import Tests.Arbitrary()
-import Text.Pandoc.Builder
+import Text.Pandoc.Shared (scrubStrTag)
 import Text.Pandoc
 import Data.List (intersperse)
 import Data.Monoid (mempty, mappend, mconcat)
 
 org :: String -> Pandoc
-org = readOrg def
+org = scrubStrTag . readOrg def
 
 infix 4 =:
 (=:) :: ToString c

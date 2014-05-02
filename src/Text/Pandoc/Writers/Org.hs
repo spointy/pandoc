@@ -263,7 +263,7 @@ inlineToOrg (Quoted DoubleQuote lst) = do
   return $ "\"" <> contents <> "\""
 inlineToOrg (Cite _  lst) = inlineListToOrg lst
 inlineToOrg (Code _ str) = return $ "=" <> text str <> "="
-inlineToOrg (Str str) = return $ text $ escapeString str
+inlineToOrg (Str str _) = return $ text $ escapeString str
 inlineToOrg (Math t str) = do
   modify $ \st -> st{ stHasMath = True }
   return $ if t == InlineMath
@@ -275,7 +275,7 @@ inlineToOrg (LineBreak) = return (text "\\\\" <> cr)
 inlineToOrg Space = return space
 inlineToOrg (Link txt (src, _)) = do
   case txt of
-        [Str x] | escapeURI x == src ->  -- autolink
+        [Str x _] | escapeURI x == src ->  -- autolink
              do modify $ \s -> s{ stLinks = True }
                 return $ "[[" <> text x <> "]]"
         _ -> do contents <- inlineListToOrg txt

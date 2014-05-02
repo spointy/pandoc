@@ -371,7 +371,7 @@ inlineToOpenDocument o ils
     | Space         <- ils = inTextStyle space
     | Span _ xs     <- ils = inlinesToOpenDocument o xs
     | LineBreak     <- ils = return $ selfClosingTag "text:line-break" []
-    | Str         s <- ils = inTextStyle $ handleSpaces $ escapeStringForXML s
+    | Str       s _ <- ils = inTextStyle $ handleSpaces $ escapeStringForXML s
     | Emph        l <- ils = withTextStyle Italic $ inlinesToOpenDocument o l
     | Strong      l <- ils = withTextStyle Bold   $ inlinesToOpenDocument o l
     | Strikeout   l <- ils = withTextStyle Strike $ inlinesToOpenDocument o l

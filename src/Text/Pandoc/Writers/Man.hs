@@ -134,8 +134,8 @@ escapeCode = concat . intersperse "\n" . map escapeLine . lines  where
 breakSentence :: [Inline] -> ([Inline], [Inline])
 breakSentence [] = ([],[])
 breakSentence xs =
-  let isSentenceEndInline (Str ys@(_:_)) | last ys == '.' = True
-      isSentenceEndInline (Str ys@(_:_)) | last ys == '?' = True
+  let isSentenceEndInline (Str ys@(_:_) _) | last ys == '.' = True
+      isSentenceEndInline (Str ys@(_:_) _) | last ys == '?' = True
       isSentenceEndInline (LineBreak) = True
       isSentenceEndInline _         = False
       (as, bs) = break isSentenceEndInline xs
@@ -143,9 +143,9 @@ breakSentence xs =
            []             -> (as, [])
            [c]            -> (as ++ [c], [])
            (c:Space:cs)   -> (as ++ [c], cs)
-           (Str ".":Str (')':ys):cs) -> (as ++ [Str ".", Str (')':ys)], cs)
-           (x@(Str ('.':')':_)):cs) -> (as ++ [x], cs)
-           (LineBreak:x@(Str ('.':_)):cs) -> (as ++[LineBreak], x:cs)
+           (Str "." src1:Str (')':ys) src2:cs) -> (as ++ [Str "." src1, Str (')':ys) src2], cs)
+           (x@(Str ('.':')':_) _):cs) -> (as ++ [x], cs)
+           (LineBreak:x@(Str ('.':_) _):cs) -> (as ++[LineBreak], x:cs)
            (c:cs)         -> (as ++ [c] ++ ds, es)
               where (ds, es) = breakSentence cs
 
@@ -296,7 +296,7 @@ blockListToMan opts blocks =
 inlineListToMan :: WriterOptions -> [Inline] -> State WriterState Doc
 -- if list starts with ., insert a zero-width character \& so it
 -- won't be interpreted as markup if it falls at the beginning of a line.
-inlineListToMan opts lst@(Str ('.':_) : _) = mapM (inlineToMan opts) lst >>=
+inlineListToMan opts lst@(Str ('.':_) _ : _) = mapM (inlineToMan opts) lst >>=
   (return . (text "\\&" <>)  . hcat)
 inlineListToMan opts lst = mapM (inlineToMan opts) lst >>= (return . hcat)
 
@@ -329,7 +329,7 @@ inlineToMan opts (Cite _ lst) =
   inlineListToMan opts lst
 inlineToMan _ (Code _ str) =
   return $ text $ "\\f[C]" ++ escapeCode str ++ "\\f[]"
-inlineToMan _ (Str str) = return $ text $ escapeString str
+inlineToMan _ (Str str _) = return $ text $ escapeString str
 inlineToMan opts (Math InlineMath str) =
   inlineListToMan opts $ readTeXMath' InlineMath str
 inlineToMan opts (Math DisplayMath str) = do
@@ -345,14 +345,14 @@ inlineToMan opts (Link txt (src, _)) = do
   linktext <- inlineListToMan opts txt
   let srcSuffix = if isPrefixOf "mailto:" src then drop 7 src else src
   return $ case txt of
-           [Str s]
+           [Str s ()]
              | escapeURI s == srcSuffix ->
                                  char '<' <> text srcSuffix <> char '>'
            _                  -> linktext <> text " (" <> text src <> char ')'
 inlineToMan opts (Image alternate (source, tit)) = do
-  let txt = if (null alternate) || (alternate == [Str ""]) ||
-               (alternate == [Str source]) -- to prevent autolinks
-               then [Str "image"]
+  let txt = if (null alternate) || (fmap scrubStrTag alternate == [Str "" ()]) ||
+               (fmap scrubStrTag alternate == [Str source ()]) -- to prevent autolinks
+               then [Str "image" ()]
                else alternate
   linkPart <- inlineToMan opts (Link txt (source, tit))
   return $ char '[' <> text "IMAGE: " <> linkPart <> char ']'

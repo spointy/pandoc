@@ -234,7 +234,7 @@ writeDocx opts doc@(Pandoc meta _) = do
           ,("xmlns:dcmitype","http://purl.org/dc/dcmitype/")
           ,("xmlns:xsi","http://www.w3.org/2001/XMLSchema-instance")]
           $ mknode "dc:title" [] (stringify $ docTitle meta)
-          : mknode "dc:creator" [] (intercalate "; " (map stringify $ docAuthors meta))
+          : mknode "dc:creator" [] (intercalate "; " (map (stringify) $ docAuthors meta))
           : maybe []
              (\x -> [ mknode "dcterms:created" [("xsi:type","dcterms:W3CDTF")] $ x
                     , mknode "dcterms:modified" [("xsi:type","dcterms:W3CDTF")] $ x
@@ -402,8 +402,9 @@ writeOpenXML opts (Pandoc meta blocks) = do
   authors <- withParaProp (pStyle "Authors") $ blocksToOpenXML opts
                  [Para (intercalate [LineBreak] auths) | not (null auths)]
   date <- withParaProp (pStyle "Date") $ blocksToOpenXML opts [Para dat | not (null dat)]
-  let convertSpace (Str x : Space : Str y : xs) = Str (x ++ " " ++ y) : xs
-      convertSpace (Str x : Str y : xs) = Str (x ++ y) : xs
+  let convertSpace :: [Inline] -> [Inline]
+      convertSpace (Str x src1 : Space : Str y src2 : xs) = Str (x ++ " " ++ y) (src1 <> src2) : xs
+      convertSpace (Str x src1 : Str y src2 : xs) = Str (x ++ y) (src1 <> src2) : xs
       convertSpace xs = xs
   let blocks' = bottomUp convertSpace $ blocks
   doc' <- blocksToOpenXML opts blocks'
@@ -645,8 +646,8 @@ formattedString str = do
 
 -- | Convert an inline element to OpenXML.
 inlineToOpenXML :: WriterOptions -> Inline -> WS [Element]
-inlineToOpenXML _ (Str str) = formattedString str
-inlineToOpenXML opts Space = inlineToOpenXML opts (Str " ")
+inlineToOpenXML _ (Str str _) = formattedString str
+inlineToOpenXML opts Space = inlineToOpenXML opts (Str " " ())
 inlineToOpenXML opts (Span (_,classes,_) ils) = do
   let off x = withTextProp (mknode x [("w:val","0")] ())
   ((if "csl-no-emph" `elem` classes then off "w:i" else id) .
@@ -674,7 +675,7 @@ inlineToOpenXML _ (RawInline f str)
   | f == Format "openxml" = return [ x | Elem x <- parseXML str ]
   | otherwise            = return []
 inlineToOpenXML opts (Quoted quoteType lst) =
-  inlinesToOpenXML opts $ [Str open] ++ lst ++ [Str close]
+  inlinesToOpenXML opts $ [Str open ()] ++ lst ++ [Str close ()]
     where (open, close) = case quoteType of
                             SingleQuote -> ("\x2018", "\x2019")
                             DoubleQuote -> ("\x201C", "\x201D")

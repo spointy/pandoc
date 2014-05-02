@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable, CPP, MultiParamTypeClasses,
-    FlexibleContexts, ScopedTypeVariables #-}
+    FlexibleContexts, ScopedTypeVariables, TypeSynonymInstances,
+    FlexibleInstances, TypeFamilies #-}
 {-
 Copyright (C) 2006-2013 John MacFarlane <jgm@berkeley.edu>
 
@@ -57,7 +58,8 @@ module Text.Pandoc.Shared (
                      compactify,
                      compactify',
                      compactify'DL,
-                     Element (..),
+                     Element,
+                     Element' (..),
                      hierarchicalize,
                      uniqueIdent,
                      isHeaderBlock,
@@ -77,13 +79,20 @@ module Text.Pandoc.Shared (
                      err,
                      warn,
                      -- * Safe read
-                     safeRead
+                     safeRead,
+                     -- * Traversals
+                     traverseAllInline,
+                     traverseInline,
+                     traverseStrTag,
+                     -- * Source file information munging
+                     scrubStrTag,
+                     unscrubStrTag
                     ) where
 
 import Text.Pandoc.Definition
 import Text.Pandoc.Walk
 import Text.Pandoc.Generic
-import Text.Pandoc.Builder (Inlines, Blocks, ToMetaValue(..))
+import Text.Pandoc.Builder (Inlines', Blocks', ToMetaValue(..))
 import qualified Text.Pandoc.Builder as B
 import qualified Text.Pandoc.UTF8 as UTF8
 import System.Environment (getProgName)
@@ -100,7 +109,11 @@ import System.FilePath ( (</>), takeExtension, dropExtension )
 import Data.Generics (Typeable, Data)
 import qualified Control.Monad.State as S
 import qualified Control.Exception as E
+import Control.Applicative (Applicative(..), (<*>), (<$>))
 import Control.Monad (msum, unless)
+import Control.Monad.Identity (Identity(..))
+import Control.Monad.Writer (execWriter, tell)
+import Data.Traversable (traverse)
 import Text.Pandoc.Pretty (charWidth)
 import System.Locale (defaultTimeLocale)
 import Data.Time
@@ -306,18 +319,18 @@ orderedListMarkers (start, numstyle, numdelim) =
 -- | Normalize a list of inline elements: remove leading and trailing
 -- @Space@ elements, collapse double @Space@s into singles, and
 -- remove empty Str elements.
-normalizeSpaces :: [Inline] -> [Inline]
+normalizeSpaces :: [Inline' a] -> [Inline' a]
 normalizeSpaces = cleanup . dropWhile isSpaceOrEmpty
  where  cleanup []              = []
         cleanup (Space:rest)    = case dropWhile isSpaceOrEmpty rest of
                                         []     -> []
                                         (x:xs) -> Space : x : cleanup xs
-        cleanup ((Str ""):rest) = cleanup rest
+        cleanup ((Str "" _):rest) = cleanup rest
         cleanup (x:rest)        = x : cleanup rest
 
-isSpaceOrEmpty :: Inline -> Bool
+isSpaceOrEmpty :: Inline' a -> Bool
 isSpaceOrEmpty Space = True
-isSpaceOrEmpty (Str "") = True
+isSpaceOrEmpty (Str "" _) = True
 isSpaceOrEmpty _ = False
 
 -- | Normalize @Pandoc@ document, consolidating doubled 'Space's,
@@ -346,7 +359,7 @@ removeEmptyInlines (SmallCaps [] : zs) = removeEmptyInlines zs
 removeEmptyInlines (Strikeout [] : zs) = removeEmptyInlines zs
 removeEmptyInlines (RawInline _ [] : zs) = removeEmptyInlines zs
 removeEmptyInlines (Code _ [] : zs) = removeEmptyInlines zs
-removeEmptyInlines (Str "" : zs) = removeEmptyInlines zs
+removeEmptyInlines (Str "" _ : zs) = removeEmptyInlines zs
 removeEmptyInlines (x : xs) = x : removeEmptyInlines xs
 removeEmptyInlines [] = []
 
@@ -357,16 +370,16 @@ removeLeadingInlineSpaces :: [Inline] -> [Inline]
 removeLeadingInlineSpaces = dropWhile isSpaceOrEmpty
 
 consolidateInlines :: [Inline] -> [Inline]
-consolidateInlines (Str x : ys) =
-  case concat (x : map fromStr strs) of
-        ""     -> consolidateInlines rest
-        n      -> Str n : consolidateInlines rest
+consolidateInlines (Str x src : ys) =
+  case mconcat ((x, src) : map fromStr strs) of
+        ("", _)   -> consolidateInlines rest
+        (n, srcs) -> Str n srcs : consolidateInlines rest
    where
      (strs, rest)  = span isStr ys
-     isStr (Str _) = True
-     isStr _       = False
-     fromStr (Str z) = z
-     fromStr _       = error "consolidateInlines - fromStr - not a Str"
+     isStr (Str _ _) = True
+     isStr _         = False
+     fromStr (Str z s) = (z, s)
+     fromStr _         = error "consolidateInlines - fromStr - not a Str"
 consolidateInlines (Space : ys) = Space : rest
    where isSp Space = True
          isSp _     = False
@@ -393,22 +406,20 @@ consolidateInlines [] = []
 -- | Convert pandoc structure to a string with formatting removed.
 -- Footnotes are skipped (since we don't want their contents in link
 -- labels).
-stringify :: Walkable Inline a => a -> String
-stringify = query go . walk deNote
-  where go :: Inline -> [Char]
+stringify :: AllInlineTraversable a => a -> String
+stringify = execWriter . traverseAllInline (\ x -> tell (go x) >> return x)
+  where go :: Inline' a -> [Char]
         go Space = " "
-        go (Str x) = x
+        go (Str x _) = x
         go (Code _ x) = x
         go (Math _ x) = x
         go LineBreak = " "
         go _ = ""
-        deNote (Note _) = Str ""
-        deNote x = x
 
 -- | Change final list item from @Para@ to @Plain@ if the list contains
 -- no other @Para@ blocks.
-compactify :: [[Block]]  -- ^ List of list items (each a list of blocks)
-           -> [[Block]]
+compactify :: [[Block' a]]  -- ^ List of list items (each a list of blocks)
+           -> [[Block' a]]
 compactify [] = []
 compactify items =
   case (init items, last items) of
@@ -424,8 +435,8 @@ compactify items =
 -- | Change final list item from @Para@ to @Plain@ if the list contains
 -- no other @Para@ blocks.  Like compactify, but operates on @Blocks@ rather
 -- than @[Block]@.
-compactify' :: [Blocks]  -- ^ List of list items (each a list of blocks)
-           -> [Blocks]
+compactify' :: [Blocks' a]  -- ^ List of list items (each a list of blocks)
+            -> [Blocks' a]
 compactify' [] = []
 compactify' items =
   let (others, final) = (init items, last items)
@@ -437,7 +448,7 @@ compactify' items =
            _      -> items
 
 -- | Like @compactify'@, but akts on items of definition lists.
-compactify'DL :: [(Inlines, [Blocks])] -> [(Inlines, [Blocks])]
+compactify'DL :: [(Inlines' a, [Blocks' a])] -> [(Inlines' a, [Blocks' a])]
 compactify'DL items =
   let defs = concatMap snd items
       defBlocks = reverse $ concatMap B.toList defs
@@ -451,15 +462,17 @@ compactify'DL items =
                             else items
            _          -> items
 
-isPara :: Block -> Bool
+isPara :: Block' a -> Bool
 isPara (Para _) = True
 isPara _        = False
 
 -- | Data structure for defining hierarchical Pandoc documents
-data Element = Blk Block
-             | Sec Int [Int] Attr [Inline] [Element]
+data Element' a = Blk (Block' a)
+                | Sec Int [Int] Attr [Inline' a] [Element' a]
              --    lvl  num attributes label    contents
              deriving (Eq, Read, Show, Typeable, Data)
+
+type Element = Element' ()
 
 instance Walkable Inline Element where
   walk f (Blk x) = Blk (walk f x)
@@ -560,8 +573,8 @@ isTightList = all firstIsPlain
 addMetaField :: ToMetaValue a
              => String
              -> a
-             -> Meta
-             -> Meta
+             -> Meta' (TMVTag a)
+             -> Meta' (TMVTag a)
 addMetaField key val (Meta meta) =
   Meta $ M.insertWith combine key (toMetaValue val) meta
   where combine newval (MetaList xs) = MetaList (xs ++ [newval])
@@ -569,7 +582,7 @@ addMetaField key val (Meta meta) =
 
 -- | Create 'Meta' from old-style title, authors, date.  This is
 -- provided to ease the transition from the old API.
-makeMeta :: [Inline] -> [[Inline]] -> [Inline] -> Meta
+makeMeta :: [Inline' a] -> [[Inline' a]] -> [Inline' a] -> Meta' a
 makeMeta title authors date =
       addMetaField "title" (B.fromList title)
     $ addMetaField "author" (map B.fromList authors)
@@ -714,3 +727,130 @@ safeRead s = case reads s of
                   (d,x):_
                     | all isSpace x -> return d
                   _                 -> fail $ "Could not read `" ++ s ++ "'"
+
+--
+-- Traversing Pandoc, Block and Inline
+--
+
+class AllInlineTraversable a where
+  type AITTag a :: *
+  -- | Traverse all the Inline elements bottom-up.
+  traverseAllInline :: (Monad f, Applicative f) => (Inline' (AITTag a) -> f (Inline' (AITTag a))) -> a -> f a
+
+instance AllInlineTraversable (Block' a) where
+  type AITTag (Block' a) = a
+  traverseAllInline f = traverseInline (traverseAllInline f)
+
+instance AllInlineTraversable (Citation' a) where
+  type AITTag (Citation' a) = a
+  traverseAllInline f = traverseInline (traverseAllInline f)
+
+instance AllInlineTraversable a => AllInlineTraversable [a] where
+  type AITTag [a] = AITTag a
+  traverseAllInline f = traverse (traverseAllInline f)
+
+instance AllInlineTraversable (Inline' a) where
+  type AITTag (Inline' a) = a
+  traverseAllInline f (Str xs src)    = f $ Str xs src
+  traverseAllInline f (Emph xs)       = f =<< (Emph <$> traverseAllInline f xs)
+  traverseAllInline f (Strong xs)     = f =<< (Strong <$> traverseAllInline f xs)
+  traverseAllInline f (Strikeout xs)  = f =<< (Strikeout <$> traverseAllInline f xs)
+  traverseAllInline f (Subscript xs)  = f =<< (Subscript <$> traverseAllInline f xs)
+  traverseAllInline f (Superscript xs)= f =<< (Superscript <$> traverseAllInline f xs)
+  traverseAllInline f (SmallCaps xs)  = f =<< (SmallCaps <$> traverseAllInline f xs)
+  traverseAllInline f (Quoted qt xs)  = f =<< (Quoted qt <$> traverseAllInline f xs)
+  traverseAllInline f (Cite cs xs)    = f =<< (Cite <$> traverseAllInline f cs <*> traverseAllInline f xs)
+  traverseAllInline f (Code attr s)   = f $ Code attr s
+  traverseAllInline f Space           = f $ Space
+  traverseAllInline f LineBreak       = f $ LineBreak
+  traverseAllInline f (Math mt s)     = f $ Math mt s
+  traverseAllInline f (RawInline t s) = f $ RawInline t s
+  traverseAllInline f (Link xs t)     = f =<< (Link <$> traverseAllInline f xs <*> pure t)
+  traverseAllInline f (Image xs t)    = f =<< (Image <$> traverseAllInline f xs <*> pure t)
+  traverseAllInline f (Note bs)       = f =<< (Note <$> traverseAllInline f bs)
+  traverseAllInline f (Span attr xs)  = f =<< (Span attr <$> traverseAllInline f xs)
+
+class StrTagTraversable t => InlineTraversable t where
+  traverseInline :: (Applicative f) => (Inline' a -> f (Inline' b)) -> t a -> f (t b)
+
+instance InlineTraversable Inline' where
+  traverseInline f inline = f inline
+
+instance InlineTraversable Block' where
+  traverseInline f (Para xs)                = Para <$> traverse (traverseInline f) xs
+  traverseInline f (Plain xs)               = Plain <$> traverse (traverseInline f) xs
+  traverseInline _ (CodeBlock attr s)       = pure $ CodeBlock attr s
+  traverseInline _ (RawBlock t s)           = pure $ RawBlock t s
+  traverseInline f (BlockQuote bs)          = BlockQuote <$> traverse (traverseInline f) bs
+  traverseInline f (OrderedList a cs)       = OrderedList a <$> traverse (traverse (traverseInline f)) cs
+  traverseInline f (BulletList cs)          = BulletList <$> traverse (traverse (traverseInline f)) cs
+  traverseInline f (DefinitionList xs)      =
+    DefinitionList <$> traverse (\ (hs, ds) -> (,) <$> traverse (traverseInline f) hs <*> traverse (traverse (traverseInline f)) ds) xs
+  traverseInline f (Header lev attr xs)     = Header lev attr <$> traverse (traverseInline f) xs
+  traverseInline _ HorizontalRule           = pure HorizontalRule
+  traverseInline f (Table capt as ws hs rs) =
+    Table <$> traverse (traverseInline f) capt <*> pure as <*> pure ws <*> traverse (traverse (traverseInline f)) hs <*> traverse (traverse (traverse (traverseInline f))) rs
+  traverseInline f (Div attr bs)            = Div attr <$> traverse (traverseInline f) bs
+  traverseInline _ Null                     = pure Null
+
+instance InlineTraversable Citation' where
+  traverseInline f (Citation cid cpre csuf cmod cnum chash) = Citation cid <$> traverse (traverseInline f) cpre <*> traverse (traverseInline f) csuf <*> pure cmod <*> pure cnum <*> pure chash
+
+instance InlineTraversable MetaValue' where
+  traverseInline f (MetaMap m) = MetaMap <$> traverse (traverseInline f) m
+  traverseInline f (MetaList l) = MetaList <$> traverse (traverseInline f) l
+  traverseInline _ (MetaBool b) = pure $ MetaBool b
+  traverseInline _ (MetaString s) = pure $ MetaString s
+  traverseInline f (MetaInlines i) = MetaInlines <$> traverse (traverseInline f) i
+  traverseInline f (MetaBlocks b) = MetaBlocks <$> traverse (traverseInline f) b
+
+instance InlineTraversable Meta' where
+  traverseInline f (Meta m) = Meta <$> traverse (traverseInline f) m
+
+instance InlineTraversable Pandoc' where
+  traverseInline f (Pandoc m b) = Pandoc <$> traverseInline f m <*> traverse (traverseInline f) b
+
+class StrTagTraversable t where
+  traverseStrTag :: (Applicative f) => (a -> f b) -> t a -> f (t b)
+
+instance StrTagTraversable Block' where
+  traverseStrTag f = traverseInline (traverseStrTag f)
+
+instance StrTagTraversable Citation' where
+  traverseStrTag f = traverseInline (traverseStrTag f)
+
+instance StrTagTraversable MetaValue' where
+  traverseStrTag f = traverseInline (traverseStrTag f)
+
+instance StrTagTraversable Meta' where
+  traverseStrTag f = traverseInline (traverseStrTag f)
+
+instance StrTagTraversable Pandoc' where
+  traverseStrTag f = traverseInline (traverseStrTag f)
+
+instance StrTagTraversable Inline' where
+  traverseStrTag f (Str xs src)     = Str xs <$> f src
+  traverseStrTag f (Emph xs)        = Emph <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Strong xs)      = Strong <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Strikeout xs)   = Strikeout <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Subscript xs)   = Subscript <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Superscript xs) = Superscript <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (SmallCaps xs)   = SmallCaps <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Quoted qt xs)   = Quoted qt <$> traverse (traverseStrTag f) xs
+  traverseStrTag f (Cite cs xs)     = Cite <$> traverse (traverseStrTag f) cs <*> traverse (traverseStrTag f) xs
+  traverseStrTag _ (Code attr s)    = pure $ Code attr s
+  traverseStrTag _ Space            = pure $ Space
+  traverseStrTag _ LineBreak        = pure $ LineBreak
+  traverseStrTag _ (Math mt s)      = pure $ Math mt s
+  traverseStrTag _ (RawInline t s)  = pure $ RawInline t s
+  traverseStrTag f (Link xs t)      = Link <$> traverse (traverseStrTag f) xs <*> pure t
+  traverseStrTag f (Image xs t)     = Image <$> traverse (traverseStrTag f) xs <*> pure t
+  traverseStrTag f (Note bs)        = Note <$> traverse (traverseStrTag f) bs
+  traverseStrTag f (Span attr xs)   = Span attr <$> traverse (traverseStrTag f) xs
+
+-- | Remove all source information from an object.
+scrubStrTag :: StrTagTraversable t => t a -> t ()
+scrubStrTag = runIdentity . traverseStrTag (const $ pure ())
+
+unscrubStrTag :: (StrTagTraversable t, Monoid a) => t () -> t a
+unscrubStrTag = runIdentity . traverseStrTag (const $ pure mempty)

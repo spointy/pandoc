@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-
 Copyright (C) 2014 Albert Krewinkel <tarleb@moltkeplatz.de>
 
@@ -39,7 +40,8 @@ import           Text.Pandoc.Parsing hiding ( F, unF, askF, asksF, runF
                                             , newline, orderedListMarker
                                             , parseFromString
                                             , updateLastStrPos )
-import           Text.Pandoc.Shared (compactify', compactify'DL)
+import           Text.Pandoc.Shared (compactify', compactify'DL,
+                                     unscrubStrTag)
 
 import           Control.Applicative ( Applicative, pure
                                      , (<$>), (<$), (<*>), (<*), (*>), (<**>) )
@@ -56,17 +58,17 @@ import           Network.HTTP (urlEncode)
 -- | Parse org-mode string and return a Pandoc document.
 readOrg :: ReaderOptions -- ^ Reader options
         -> String        -- ^ String to parse (assuming @'\n'@ line endings)
-        -> Pandoc
+        -> Pandoc' [SrcSpan]
 readOrg opts s = readWith parseOrg def{ orgStateOptions = opts } (s ++ "\n\n")
 
 type OrgParser = Parser [Char] OrgParserState
 
-parseOrg :: OrgParser Pandoc
+parseOrg :: OrgParser (Pandoc' [SrcSpan])
 parseOrg = do
   blocks' <- parseBlocks
   st <- getState
   let meta = runF (orgStateMeta' st) st
-  return $ Pandoc meta $ filter (/= Null) (B.toList $ runF blocks' st)
+  return $ unscrubStrTag $ Pandoc meta $ filter (/= Null) (B.toList $ runF blocks' st)
 
 --
 -- Parser State for Org
@@ -99,6 +101,7 @@ instance HasReaderOptions OrgParserState where
   extractReaderOptions = orgStateOptions
 
 instance HasMeta OrgParserState where
+  type HMTag OrgParserState = ()
   setMeta field val st =
     st{ orgStateMeta = setMeta field val $ orgStateMeta st }
   deleteMeta field st =
@@ -609,6 +612,7 @@ normalizeTable (OrgTable cols aligns heads lns) =
                 then mempty
                 else fillColumns heads (B.plain mempty)
       lns'    = map (`fillColumns` B.plain mempty) lns
+      fillColumns :: [a] -> a -> [a]
       fillColumns base padding = take cols $ base ++ repeat padding
   in OrgTable cols aligns' heads' lns'
 

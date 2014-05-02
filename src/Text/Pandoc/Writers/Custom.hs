@@ -205,7 +205,7 @@ inlineListToCustom lua lst = do
 -- | Convert Pandoc inline element to Custom.
 inlineToCustom :: LuaState -> Inline -> IO ByteString
 
-inlineToCustom lua (Str str) = callfunc lua "Str" $ fromString str
+inlineToCustom lua (Str str _) = callfunc lua "Str" (fromString str)
 
 inlineToCustom lua Space = callfunc lua "Space"
 

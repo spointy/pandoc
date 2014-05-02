@@ -2,7 +2,6 @@
 module Tests.Writers.Markdown (tests) where
 
 import Test.Framework
-import Text.Pandoc.Builder
 import Text.Pandoc
 import Tests.Helpers
 import Tests.Arbitrary()
@@ -29,10 +28,11 @@ infix 4 =:
 
 tests :: [Test]
 tests = [ "indented code after list"
-             =: (orderedList [ para "one" <> para "two" ] <> codeBlock "test")
+             =: (orderedList [ para "one" <> para "two" ]
+                   <> codeBlock "test" :: Blocks)
              =?> "1.  one\n\n    two\n\n<!-- -->\n\n    test"
         , "list with tight sublist"
-             =: bulletList [ plain "foo" <> bulletList [ plain "bar" ],
-                             plain "baz" ]
+             =: (bulletList [ plain "foo" <> bulletList [ plain "bar" ],
+                              plain "baz" ] :: Blocks)
              =?> "-   foo\n    -   bar\n-   baz\n"
         ]

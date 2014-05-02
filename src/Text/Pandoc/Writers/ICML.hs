@@ -277,8 +277,8 @@ blocksToICML opts style lst = vcat `fmap` mapM (blockToICML opts style) lst
 blockToICML :: WriterOptions -> Style -> Block -> WS Doc
 blockToICML opts style (Plain lst) = parStyle opts style lst
 blockToICML opts style (Para lst) = parStyle opts (paragraphName:style) lst
-blockToICML opts style (CodeBlock _ str) = parStyle opts (codeBlockName:style) $ [Str str]
-blockToICML opts style (RawBlock _ str) = parStyle opts (rawBlockName:style) $ [Str str]
+blockToICML opts style (CodeBlock _ str) = parStyle opts (codeBlockName:style) $ [Str str ()]
+blockToICML opts style (RawBlock _ str) = parStyle opts (rawBlockName:style) $ [Str str ()]
 blockToICML opts style (BlockQuote blocks) = blocksToICML opts (blockQuoteName:style) blocks
 blockToICML opts style (OrderedList attribs lst) = listItemsToICML opts orderedListName style (Just attribs) lst
 blockToICML opts style (BulletList lst) = listItemsToICML opts bulletListName style Nothing lst
@@ -370,7 +370,7 @@ listItemToICML opts style isFirst attribs item =
       stl' = makeNumbStart attribs ++ stl
   in  if length item > 1
          then do
-           let insertTab (Para lst) = blockToICML opts (subListParName:style) $ Para $ (Str "\t"):lst
+           let insertTab (Para lst) = blockToICML opts (subListParName:style) $ Para $ (Str "\t" ()):lst
                insertTab block      = blockToICML opts style block
            f <- blockToICML opts stl' $ head item
            r <- fmap vcat $ mapM insertTab $ tail item
@@ -390,15 +390,15 @@ inlinesToICML opts style lst = vcat `fmap` mapM (inlineToICML opts style) (merge
 
 -- | Convert an inline element to ICML.
 inlineToICML :: WriterOptions -> Style -> Inline -> WS Doc
-inlineToICML _    style (Str str) = charStyle style $ text $ escapeStringForXML str
+inlineToICML _    style (Str str _) = charStyle style $ text $ escapeStringForXML str
 inlineToICML opts style (Emph lst) = inlinesToICML opts (emphName:style) lst
 inlineToICML opts style (Strong lst) = inlinesToICML opts (strongName:style) lst
 inlineToICML opts style (Strikeout lst) = inlinesToICML opts (strikeoutName:style) lst
 inlineToICML opts style (Superscript lst) = inlinesToICML opts (superscriptName:style) lst
 inlineToICML opts style (Subscript lst) = inlinesToICML opts (subscriptName:style) lst
 inlineToICML opts style (SmallCaps lst) = inlinesToICML opts (smallCapsName:style) lst
-inlineToICML opts style (Quoted SingleQuote lst) = inlinesToICML opts style $ [Str "‘"] ++ lst ++ [Str "’"]
-inlineToICML opts style (Quoted DoubleQuote lst) = inlinesToICML opts style $ [Str "“"] ++ lst ++ [Str "”"]
+inlineToICML opts style (Quoted SingleQuote lst) = inlinesToICML opts style $ [Str "‘" ()] ++ lst ++ [Str "’" ()]
+inlineToICML opts style (Quoted DoubleQuote lst) = inlinesToICML opts style $ [Str "“" ()] ++ lst ++ [Str "”" ()]
 inlineToICML opts style (Cite _ lst) = footnoteToICML opts style [Para lst]
 inlineToICML _    style (Code _ str) = charStyle (codeName:style) $ text $ escapeStringForXML str
 inlineToICML _    style Space = charStyle style space
@@ -422,7 +422,7 @@ inlineToICML opts style (Span _ lst) = inlinesToICML opts style lst
 -- | Convert a list of block elements to an ICML footnote.
 footnoteToICML :: WriterOptions -> Style -> [Block] -> WS Doc
 footnoteToICML opts style lst =
-  let insertTab (Para ls) = blockToICML opts (footnoteName:style) $ Para $ (Str "\t"):ls
+  let insertTab (Para ls) = blockToICML opts (footnoteName:style) $ Para $ (Str "\t" ()):ls
       insertTab block     = blockToICML opts (footnoteName:style) block
   in  do
     contents <- mapM insertTab lst
@@ -434,9 +434,9 @@ footnoteToICML opts style lst =
 
 -- | Auxiliary function to merge Space elements into the adjacent Strs.
 mergeSpaces :: [Inline] -> [Inline]
-mergeSpaces ((Str s):(Space:((Str s'):xs))) = mergeSpaces $ Str(s++" "++s') : xs
-mergeSpaces (Space:((Str s):xs)) = mergeSpaces $ Str (" "++s) : xs
-mergeSpaces ((Str s):(Space:xs)) = mergeSpaces $ Str (s++" ") : xs
+mergeSpaces ((Str s src1):(Space:((Str s' src2):xs))) = mergeSpaces $ Str(s++" "++s') (src1 <> src2) : xs
+mergeSpaces (Space:((Str s src):xs)) = mergeSpaces $ Str (" "++s) src : xs
+mergeSpaces ((Str s src):(Space:xs)) = mergeSpaces $ Str (s++" ") src : xs
 mergeSpaces (x:xs) = x : (mergeSpaces xs)
 mergeSpaces []     = []
 

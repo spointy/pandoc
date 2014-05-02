@@ -95,7 +95,8 @@ pandocToLaTeX options (Pandoc meta blocks) = do
                              _ -> blocks
                    else blocks
   -- see if there are internal links
-  let isInternalLink (Link _ ('#':xs,_))  = [xs]
+  let isInternalLink :: Inline -> [String]
+      isInternalLink (Link _ ('#':xs,_))  = [xs]
       isInternalLink _                    = []
   modify $ \s -> s{ stInternalLinks = query isInternalLink blocks' }
   let template = writerTemplate options
@@ -260,9 +261,11 @@ elementToBeamer slideLevel  (Sec lvl _num (ident,classes,kvs) tit elts)
       return $ (Header lvl (ident,classes,kvs) tit) : bs
   | otherwise = do -- lvl == slideLevel
       -- note: [fragile] is required or verbatim breaks
-      let hasCodeBlock (CodeBlock _ _) = [True]
+      let hasCodeBlock :: Block -> [Bool]
+          hasCodeBlock (CodeBlock _ _) = [True]
           hasCodeBlock _               = []
-      let hasCode (Code _ _) = [True]
+      let hasCode :: Inline -> [Bool]
+          hasCode (Code _ _) = [True]
           hasCode _          = []
       opts <- gets stOptions
       let fragile = not $ null $ query hasCodeBlock elts ++
@@ -276,7 +279,7 @@ elementToBeamer slideLevel  (Sec lvl _num (ident,classes,kvs) tit elts)
                        then ""
                        else "[" ++ intercalate "," optionslist ++ "]"
       let slideStart = Para $ RawInline "latex" ("\\begin{frame}" ++ options) :
-                if tit == [Str "\0"]  -- marker for hrule
+                if fmap scrubStrTag tit == [Str "\0" ()]  -- marker for hrule
                    then []
                    else (RawInline "latex" "{") : tit ++ [RawInline "latex" "}"]
       let slideEnd = RawBlock "latex" "\\end{frame}"
@@ -316,11 +319,11 @@ blockToLaTeX (Para [Image txt (src,'f':'i':'g':':':tit)]) = do
   return $ "\\begin{figure}[htbp]" $$ "\\centering" $$ img $$
            capt $$ "\\end{figure}"
 -- . . . indicates pause in beamer slides
-blockToLaTeX (Para [Str ".",Space,Str ".",Space,Str "."]) = do
+blockToLaTeX (Para [Str "." src1,Space,Str "." src2,Space,Str "." src3]) = do
   beamer <- writerBeamer `fmap` gets stOptions
   if beamer
      then blockToLaTeX (RawBlock "latex" "\\pause")
-     else inlineListToLaTeX [Str ".",Space,Str ".",Space,Str "."]
+     else inlineListToLaTeX [Str "." src1,Space,Str "." src2,Space,Str "." src3]
 blockToLaTeX (Para lst) =
   inlineListToLaTeX $ dropWhile isLineBreakOrSpace lst
 blockToLaTeX (BlockQuote lst) = do
@@ -579,7 +582,8 @@ sectionHeader :: Bool    -- True for unnumbered
               -> State WriterState Doc
 sectionHeader unnumbered ref level lst = do
   txt <- inlineListToLaTeX lst
-  let noNote (Note _) = Str ""
+  let noNote :: Inline -> Inline
+      noNote (Note _) = Str "" ()
       noNote x        = x
   let lstNoNotes = walk noNote lst
   txtNoNotes <- inlineListToLaTeX lstNoNotes
@@ -641,11 +645,11 @@ inlineListToLaTeX lst =
     -- so we turn nbsps after hard breaks to \hspace commands.
     -- this is mostly used in verse.
  where fixLineInitialSpaces [] = []
-       fixLineInitialSpaces (LineBreak : Str s@('\160':_) : xs) =
-         LineBreak : fixNbsps s ++ fixLineInitialSpaces xs
+       fixLineInitialSpaces (LineBreak : Str s@('\160':_) src : xs) =
+         LineBreak : fixNbsps s src ++ fixLineInitialSpaces xs
        fixLineInitialSpaces (x:xs) = x : fixLineInitialSpaces xs
-       fixNbsps s = let (ys,zs) = span (=='\160') s
-                    in  replicate (length ys) hspace ++ [Str zs]
+       fixNbsps s src = let (ys,zs) = span (=='\160') s
+                        in  replicate (length ys) hspace ++ [Str zs src]
        hspace = RawInline "latex" "\\hspace*{0.333em}"
 
 isQuoted :: Inline -> Bool
@@ -732,7 +736,7 @@ inlineToLaTeX (Quoted qt lst) = do
                    if writerTeXLigatures opts
                       then char '`' <> inner <> char '\''
                       else char '\x2018' <> inner <> char '\x2019'
-inlineToLaTeX (Str str) = liftM text $ stringToLaTeX TextString str
+inlineToLaTeX (Str str _) = liftM text $ stringToLaTeX TextString str
 inlineToLaTeX (Math InlineMath str) =
   return $ char '$' <> text str <> char '$'
 inlineToLaTeX (Math DisplayMath str) =
@@ -750,7 +754,7 @@ inlineToLaTeX (Link txt ('#':ident, _)) = do
               braces contents
 inlineToLaTeX (Link txt (src, _)) =
   case txt of
-        [Str x] | x == src ->  -- autolink
+        [Str x _] | x == src ->  -- autolink
              do modify $ \s -> s{ stUrl = True }
                 src' <- stringToLaTeX URLString x
                 return $ text $ "\\url{" ++ src' ++ "}"
@@ -836,9 +840,9 @@ citeCommand c p s k = do
 citeArguments :: [Inline] -> [Inline] -> String -> State WriterState Doc
 citeArguments p s k = do
   let s' = case s of
-        (Str (x:[]) : r) | isPunctuation x -> dropWhile (== Space) r
-        (Str (x:xs) : r) | isPunctuation x -> Str xs : r
-        _                                  -> s
+        (Str (x:[]) _   : r) | isPunctuation x -> dropWhile (== Space) r
+        (Str (x:xs) src : r) | isPunctuation x -> Str xs src : r
+        _                                      -> s
   pdoc <- inlineListToLaTeX p
   sdoc <- inlineListToLaTeX s'
   let optargs = case (isEmpty pdoc, isEmpty sdoc) of

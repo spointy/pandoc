@@ -2,7 +2,6 @@
 module Tests.Writers.ConTeXt (tests) where
 
 import Test.Framework
-import Text.Pandoc.Builder
 import Text.Pandoc
 import Tests.Helpers
 import Tests.Arbitrary()
@@ -32,27 +31,28 @@ infix 4 =:
 
 tests :: [Test]
 tests = [ testGroup "inline code"
-          [ "with '}'" =: code "}" =?> "\\mono{\\}}"
-          , "without '}'" =: code "]" =?> "\\type{]}"
+          [ "with '}'" =: (code "}" :: Inlines) =?> ("\\mono{\\}}" :: String)
+          , "without '}'" =: (code "]" :: Inlines) =?> ("\\type{]}" :: String)
           , property "code property" $ \s -> null s ||
                 if '{' `elem` s || '}' `elem` s
-                   then (context' $ code s) == "\\mono{" ++
-                             (context' $ str s) ++ "}"
-                   else (context' $ code s) == "\\type{" ++ s ++ "}"
+                   then (context' (code s :: Inlines)) == "\\mono{" ++
+                             (context' (str s :: Inlines)) ++ "}"
+                   else (context' (code s :: Inlines)) == "\\type{" ++ s ++ "}"
           ]
         , testGroup "headers"
           [ "level 1" =:
-            headerWith ("my-header",[],[]) 1 "My header" =?> "\\section[my-header]{My header}"
+            (headerWith ("my-header",[],[]) 1 "My header" :: Blocks)
+              =?> ("\\section[my-header]{My header}" :: String)
           ]
         , testGroup "bullet lists"
           [ "nested" =:
-            bulletList [
-               plain (text "top")
-                 <> bulletList [
-                   plain (text "next")
-                    <> bulletList [plain (text "bot")]
-                 ]
-            ] =?> unlines
+            ( bulletList [
+                plain (text "top")
+                  <> bulletList [
+                    plain (text "next")
+                     <> bulletList [plain (text "bot")]
+                  ]
+             ] :: Blocks ) =?> unlines
                 [ "\\startitemize[packed]"
                 , "\\item"
                 , "  top"

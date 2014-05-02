@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TypeSynonymInstances,
-    FlexibleInstances#-}
+    FlexibleInstances, TypeFamilies #-}
 {-
 Copyright (C) 2006-2010 John MacFarlane <jgm@berkeley.edu>
 
@@ -54,6 +54,7 @@ module Text.Pandoc.Parsing ( (>>~),
                              withRaw,
                              escaped,
                              characterReference,
+                             withPosition,
                              updateLastStrPos,
                              anyOrderedListMarker,
                              orderedListMarker,
@@ -66,7 +67,8 @@ module Text.Pandoc.Parsing ( (>>~),
                              testStringWith,
                              guardEnabled,
                              guardDisabled,
-                             ParserState (..),
+                             ParserState' (..),
+                             ParserState,
                              HasReaderOptions (..),
                              HasHeaderMap (..),
                              HasIdentifierList (..),
@@ -78,7 +80,7 @@ module Text.Pandoc.Parsing ( (>>~),
                              NoteTable,
                              NoteTable',
                              KeyTable,
-                             SubstTable,
+                             SubstTable',
                              Key (..),
                              toKey,
                              registerHeader,
@@ -157,7 +159,8 @@ where
 
 import Text.Pandoc.Definition
 import Text.Pandoc.Options
-import Text.Pandoc.Builder (Blocks, Inlines, rawBlock, HasMeta(..))
+import Text.Pandoc.Builder (Blocks', Inlines, Inlines',
+                            rawBlock, HasMeta(..))
 import qualified Text.Pandoc.Builder as B
 import Text.Pandoc.XML (fromEntities)
 import qualified Text.Pandoc.UTF8 as UTF8 (putStrLn)
@@ -650,10 +653,22 @@ orderedListMarker style delim = do
   return start
 
 -- | Parses a character reference and returns a Str element.
-charRef :: Parser [Char] st Inline
+charRef :: Parser [Char] st (Inline' [SrcSpan])
 charRef = do
-  c <- characterReference
-  return $ Str [c]
+  (c, src) <- withPosition characterReference
+  return $ Str [c] [src]
+
+withPosition :: Parser s st a -> Parser s st (a, SrcSpan)
+withPosition a = do
+  startPos <- getPosition
+  res <- a
+  endPos <- getPosition
+  let src = SrcSpan { srcSpanLineStart = sourceLine startPos
+                    , srcSpanColStart = sourceColumn startPos
+                    , srcSpanLineEnd = sourceLine endPos
+                    , srcSpanColEnd = sourceColumn endPos
+                    }
+  return (res, src)
 
 lineBlockLine :: Parser [Char] st String
 lineBlockLine = try $ do
@@ -674,11 +689,11 @@ lineBlockLines = try $ do
 
 -- | Parse a table using 'headerParser', 'rowParser',
 -- 'lineParser', and 'footerParser'.
-tableWith :: Parser [Char] ParserState ([[Block]], [Alignment], [Int])
-          -> ([Int] -> Parser [Char] ParserState [[Block]])
+tableWith :: Parser [Char] ParserState ([[Block' a]], [Alignment], [Int])
+          -> ([Int] -> Parser [Char] ParserState [[Block' a]])
           -> Parser [Char] ParserState sep
           -> Parser [Char] ParserState end
-          -> Parser [Char] ParserState Block
+          -> Parser [Char] ParserState (Block' a)
 tableWith headerParser rowParser lineParser footerParser = try $ do
     (heads, aligns, indices) <- headerParser
     lines' <- rowParser indices `sepEndBy1` lineParser
@@ -720,9 +735,9 @@ widthsFromIndices numColumns' indices =
 -- (which may be grid), then the rows,
 -- which may be grid, separated by blank lines, and
 -- ending with a footer (dashed line followed by blank line).
-gridTableWith :: Parser [Char] ParserState [Block]   -- ^ Block list parser
+gridTableWith :: Parser [Char] ParserState [Block' a]   -- ^ Block list parser
               -> Bool                                -- ^ Headerless table
-              -> Parser [Char] ParserState Block
+              -> Parser [Char] ParserState (Block' a)
 gridTableWith blocks headless =
   tableWith (gridTableHeader headless blocks) (gridTableRow blocks)
             (gridTableSep '-') gridTableFooter
@@ -750,8 +765,8 @@ gridTableSep ch = try $ gridDashedLines ch >> return '\n'
 
 -- | Parse header for a grid table.
 gridTableHeader :: Bool -- ^ Headerless table
-                -> Parser [Char] ParserState [Block]
-                -> Parser [Char] ParserState ([[Block]], [Alignment], [Int])
+                -> Parser [Char] ParserState [Block' a]
+                -> Parser [Char] ParserState ([[Block' a]], [Alignment], [Int])
 gridTableHeader headless blocks = try $ do
   optional blanklines
   dashes <- gridDashedLines '-'
@@ -781,9 +796,9 @@ gridTableRawLine indices = do
   return (gridTableSplitLine indices line)
 
 -- | Parse row of grid table.
-gridTableRow :: Parser [Char] ParserState [Block]
+gridTableRow :: Parser [Char] ParserState [Block' a]
              -> [Int]
-             -> Parser [Char] ParserState [[Block]]
+             -> Parser [Char] ParserState [[Block' a]]
 gridTableRow blocks indices = do
   colLines <- many1 (gridTableRawLine indices)
   let cols = map ((++ "\n") . unlines . removeOneLeadingSpace) $
@@ -798,7 +813,7 @@ removeOneLeadingSpace xs =
    where startsWithSpace ""     = True
          startsWithSpace (y:_) = y == ' '
 
-compactifyCell :: [Block] -> [Block]
+compactifyCell :: [Block' a] -> [Block' a]
 compactifyCell bs = head $ compactify [bs]
 
 -- | Parse footer for a grid table.
@@ -832,7 +847,7 @@ testStringWith parser str = UTF8.putStrLn $ show $
                             readWith parser defaultParserState str
 
 -- | Parsing options.
-data ParserState = ParserState
+data ParserState' a = ParserState
     { stateOptions         :: ReaderOptions, -- ^ User options
       stateParserContext   :: ParserContext, -- ^ Inside list?
       stateQuoteContext    :: QuoteContext,  -- ^ Inside quoted environment?
@@ -840,11 +855,11 @@ data ParserState = ParserState
       stateMaxNestingLevel :: Int,           -- ^ Max # of nested Strong/Emph
       stateLastStrPos      :: Maybe SourcePos, -- ^ Position after last str parsed
       stateKeys            :: KeyTable,      -- ^ List of reference keys (with fallbacks)
-      stateSubstitutions   :: SubstTable,    -- ^ List of substitution references
+      stateSubstitutions   :: SubstTable' a, -- ^ List of substitution references
       stateNotes           :: NoteTable,     -- ^ List of notes (raw bodies)
       stateNotes'          :: NoteTable',    -- ^ List of notes (parsed bodies)
-      stateMeta            :: Meta,          -- ^ Document metadata
-      stateMeta'           :: F Meta,        -- ^ Document metadata
+      stateMeta            :: Meta' a,       -- ^ Document metadata
+      stateMeta'           :: F (Meta' a),   -- ^ Document metadata
       stateHeaderTable     :: [HeaderType],  -- ^ Ordered list of header types used
       stateHeaders         :: M.Map Inlines String, -- ^ List of headers and ids (used for implicit ref links)
       stateIdentifiers     :: [String],      -- ^ List of header identifiers used
@@ -857,14 +872,17 @@ data ParserState = ParserState
       -- Triple represents: 1) Base role, 2) Optional format (only for :raw:
       -- roles), 3) Source language annotation for code (could be used to
       -- annotate role classes too).
-      stateCaption         :: Maybe Inlines, -- ^ Caption in current environment
+      stateCaption         :: Maybe (Inlines' a), -- ^ Caption in current environment
       stateWarnings        :: [String]       -- ^ Warnings generated by the parser
     }
 
-instance Default ParserState where
+type ParserState = ParserState' [SrcSpan]
+
+instance Default (ParserState' a) where
   def = defaultParserState
 
-instance HasMeta ParserState where
+instance HasMeta (ParserState' a) where
+  type HMTag (ParserState' a) = a
   setMeta field val st =
     st{ stateMeta = setMeta field val $ stateMeta st }
   deleteMeta field st =
@@ -876,7 +894,7 @@ class HasReaderOptions st where
   -- default
   getOption  f         = (f . extractReaderOptions) `fmap` getState
 
-instance HasReaderOptions ParserState where
+instance HasReaderOptions (ParserState' a) where
   extractReaderOptions = stateOptions
 
 class HasHeaderMap st where
@@ -884,7 +902,7 @@ class HasHeaderMap st where
   updateHeaderMap   :: (M.Map Inlines String -> M.Map Inlines String) ->
                        st -> st
 
-instance HasHeaderMap ParserState where
+instance HasHeaderMap (ParserState' a) where
   extractHeaderMap     = stateHeaders
   updateHeaderMap f st = st{ stateHeaders = f $ stateHeaders st }
 
@@ -892,7 +910,7 @@ class HasIdentifierList st where
   extractIdentifierList  :: st -> [String]
   updateIdentifierList   :: ([String] -> [String]) -> st -> st
 
-instance HasIdentifierList ParserState where
+instance HasIdentifierList (ParserState' a) where
   extractIdentifierList     = stateIdentifiers
   updateIdentifierList f st = st{ stateIdentifiers = f $ stateIdentifiers st }
 
@@ -900,11 +918,11 @@ class HasMacros st where
   extractMacros         :: st -> [Macro]
   updateMacros          :: ([Macro] -> [Macro]) -> st -> st
 
-instance HasMacros ParserState where
+instance HasMacros (ParserState' a) where
   extractMacros        = stateMacros
   updateMacros f st    = st{ stateMacros = f $ stateMacros st }
 
-defaultParserState :: ParserState
+defaultParserState :: ParserState' a
 defaultParserState =
     ParserState { stateOptions         = def,
                   stateParserContext   = NullState,
@@ -956,7 +974,7 @@ data QuoteContext
 
 type NoteTable = [(String, String)]
 
-type NoteTable' = [(String, F Blocks)]  -- used in markdown reader
+type NoteTable' = [(String, F (Blocks' [SrcSpan]))]  -- used in markdown reader
 
 newtype Key = Key String deriving (Show, Read, Eq, Ord)
 
@@ -965,7 +983,7 @@ toKey = Key . map toLower . unwords . words
 
 type KeyTable = M.Map Key Target
 
-type SubstTable = M.Map Key Inlines
+type SubstTable' a = M.Map Key (Inlines' a)
 
 --  | Add header to the list of headers in state, together
 --  with its associated identifier.  If the identifier is null
@@ -973,8 +991,9 @@ type SubstTable = M.Map Key Inlines
 --  unique identifier, and update the list of identifiers
 --  in state.
 registerHeader :: (HasReaderOptions st, HasHeaderMap st, HasIdentifierList st)
-               => Attr -> Inlines -> Parser s st Attr
-registerHeader (ident,classes,kvs) header' = do
+               => Attr -> Inlines' a -> Parser s st Attr
+registerHeader (ident,classes,kvs) header = do
+  let header' = fmap scrubStrTag header
   ids <- extractIdentifierList `fmap` getState
   exts <- getOption readerExtensions
   let insert' = M.insertWith (\_new old -> old)
@@ -997,17 +1016,19 @@ registerHeader (ident,classes,kvs) header' = do
 failUnlessSmart :: HasReaderOptions st => Parser s st ()
 failUnlessSmart = getOption readerSmart >>= guard
 
-smartPunctuation :: Parser [Char] ParserState Inlines
-                 -> Parser [Char] ParserState Inlines
+smartPunctuation :: Parser [Char] ParserState (Inlines' [SrcSpan])
+                 -> Parser [Char] ParserState (Inlines' [SrcSpan])
 smartPunctuation inlineParser = do
   failUnlessSmart
   choice [ quoted inlineParser, apostrophe, dash, ellipses ]
 
-apostrophe :: Parser [Char] ParserState Inlines
-apostrophe = (char '\'' <|> char '\8217') >> return (B.str "\x2019")
+apostrophe :: Parser [Char] ParserState (Inlines' [SrcSpan])
+apostrophe = do
+  (_, src) <- withPosition $ char '\'' <|> char '\8217'
+  return (B.strSrcSpan src "\x2019")
 
-quoted :: Parser [Char] ParserState Inlines
-       -> Parser [Char] ParserState Inlines
+quoted :: Parser [Char] ParserState (Inlines' [SrcSpan])
+       -> Parser [Char] ParserState (Inlines' [SrcSpan])
 quoted inlineParser = doubleQuoted inlineParser <|> singleQuoted inlineParser
 
 withQuoteContext :: QuoteContext
@@ -1022,15 +1043,15 @@ withQuoteContext context parser = do
   setState newState { stateQuoteContext = oldQuoteContext }
   return result
 
-singleQuoted :: Parser [Char] ParserState Inlines
-             -> Parser [Char] ParserState Inlines
+singleQuoted :: Parser [Char] ParserState (Inlines' [SrcSpan])
+             -> Parser [Char] ParserState (Inlines' [SrcSpan])
 singleQuoted inlineParser = try $ do
   singleQuoteStart
   withQuoteContext InSingleQuote $ many1Till inlineParser singleQuoteEnd >>=
     return . B.singleQuoted . mconcat
 
-doubleQuoted :: Parser [Char] ParserState Inlines
-             -> Parser [Char] ParserState Inlines
+doubleQuoted :: Parser [Char] ParserState (Inlines' [SrcSpan])
+             -> Parser [Char] ParserState (Inlines' [SrcSpan])
 doubleQuoted inlineParser = try $ do
   doubleQuoteStart
   withQuoteContext InDoubleQuote $ manyTill inlineParser doubleQuoteEnd >>=
@@ -1078,17 +1099,17 @@ doubleQuoteEnd = do
   charOrRef "\"\8221\148"
   return ()
 
-ellipses :: Parser [Char] st Inlines
+ellipses :: Parser [Char] st (Inlines' [SrcSpan])
 ellipses = do
-  try (charOrRef "\8230\133") <|> try (string "..." >> return '…')
-  return (B.str "\8230")
+  (_, src) <- withPosition $ try (charOrRef "\8230\133") <|> try (string "..." >> return '…')
+  return (B.strSrcSpan src "\8230")
 
-dash :: Parser [Char] ParserState Inlines
+dash :: Parser [Char] ParserState (Inlines' [SrcSpan])
 dash = do
   oldDashes <- getOption readerOldDashes
   if oldDashes
      then emDashOld <|> enDashOld
-     else B.str `fmap` (hyphenDash <|> emDash <|> enDash)
+     else uncurry (flip B.strSrcSpan) `fmap` (withPosition $ hyphenDash <|> emDash <|> enDash)
 
 -- Two hyphens = en-dash, three = em-dash
 hyphenDash :: Parser [Char] st String
@@ -1106,16 +1127,17 @@ enDash = do
   try (charOrRef "\8212\151")
   return "\8211"
 
-enDashOld :: Parser [Char] st Inlines
+enDashOld :: Parser [Char] st (Inlines' [SrcSpan])
 enDashOld = do
-  try (charOrRef "\8211\150") <|>
+  (_, src) <- withPosition $ try (charOrRef "\8211\150") <|>
     try (char '-' >> lookAhead (satisfy isDigit) >> return '–')
-  return (B.str "\8211")
+  return (B.strSrcSpan src "\8211")
 
-emDashOld :: Parser [Char] st Inlines
+emDashOld :: Parser [Char] st (Inlines' [SrcSpan])
 emDashOld = do
-  try (charOrRef "\8212\151") <|> (try $ string "--" >> optional (char '-') >> return '-')
-  return (B.str "\8212")
+  (_, src) <- withPosition $ try (charOrRef "\8212\151") <|>
+    (try $ string "--" >> optional (char '-') >> return '-')
+  return (B.strSrcSpan src "\8212")
 
 -- This is used to prevent exponential blowups for things like:
 -- a**a*a**a*a**a*a**a*a**a*a**a*a**
@@ -1134,7 +1156,7 @@ nested p = do
 --
 
 -- | Parse a \newcommand or \renewcommand macro definition.
-macro :: (HasMacros st, HasReaderOptions st) => Parser [Char] st Blocks
+macro :: (HasMacros st, HasReaderOptions st) => Parser [Char] st (Blocks' [SrcSpan])
 macro = do
   apply <- getOption readerApplyMacros
   inp <- getInput

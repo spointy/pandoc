@@ -6,7 +6,7 @@ import Data.Char (toUpper)
 import Control.Monad
 import System.FilePath
 import System.Environment (getArgs)
-import Text.Pandoc.Shared (normalize)
+import Text.Pandoc.Shared (normalize, scrubStrTag)
 import Data.Maybe ( catMaybes )
 import Prelude hiding (catch)
 import Control.Exception ( catch )
@@ -27,10 +27,10 @@ main = do
 
   unless (null ds1 && null ds2) $ do
     rmContents <- UTF8.readFile "README"
-    let (Pandoc meta blocks) = readMarkdown def rmContents
-    let manBlocks = removeSect [Str "Wrappers"]
-                  $ removeSect [Str "Pandoc's",Space,Str "markdown"] blocks
-    let syntaxBlocks = extractSect [Str "Pandoc's",Space,Str "markdown"] blocks
+    let (Pandoc meta blocks) = scrubStrTag $ readMarkdown def rmContents
+    let manBlocks = removeSect [Str "Wrappers" ()]
+                  $ removeSect [Str "Pandoc's" (),Space,Str "markdown" ()] blocks
+    let syntaxBlocks = extractSect [Str "Pandoc's" (),Space,Str "markdown" ()] blocks
     args <- getArgs
     let verbose = "--verbose" `elem` args
     unless (null ds1) $
@@ -63,7 +63,7 @@ capitalizeHeaders (Header 1 attr xs) = Header 1 attr $ bottomUp capitalize xs
 capitalizeHeaders x = x
 
 capitalize :: Inline -> Inline
-capitalize (Str xs) = Str $ map toUpper xs
+capitalize (Str xs src) = Str (map toUpper xs) src
 capitalize x = x
 
 removeSect :: [Inline] -> [Block] -> [Block]
@@ -75,7 +75,8 @@ removeSect _ [] = []
 extractSect :: [Inline] -> [Block] -> [Block]
 extractSect ils (Header 1 _ z:xs) | normalize z == normalize ils =
   bottomUp promoteHeader $ takeWhile (not . isHeader1) xs
-    where promoteHeader (Header n attr x) = Header (n-1) attr x
+    where promoteHeader :: Block -> Block
+          promoteHeader (Header n attr x) = Header (n-1) attr x
           promoteHeader x            = x
 extractSect ils (x:xs) = extractSect ils xs
 extractSect _ [] = []

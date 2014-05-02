@@ -30,23 +30,25 @@ Conversion of a string representation of a pandoc type (@Pandoc@,
 -}
 module Text.Pandoc.Readers.Native ( readNative ) where
 
+import Data.Monoid (Monoid)
 import Text.Pandoc.Definition
-import Text.Pandoc.Shared (safeRead)
+import Text.Pandoc.Shared (safeRead, unscrubStrTag)
 
 -- | Read native formatted text and return a Pandoc document.
 -- The input may be a full pandoc document, a block list, a block,
 -- an inline list, or an inline.  Thus, for example,
 --
--- > Str "hi"
+-- > Str "hi" ()
 --
 -- will be treated as if it were
 --
--- > Pandoc nullMeta [Plain [Str "hi"]]
+-- > Pandoc nullMeta [Plain [Str "hi" ()]]
 --
-readNative :: String      -- ^ String to parse (assuming @'\n'@ line endings)
-           -> Pandoc
+readNative :: (Monoid a)
+           => String      -- ^ String to parse (assuming @'\n'@ line endings)
+           -> Pandoc' a
 readNative s =
-  case safeRead s of
+  unscrubStrTag $ case safeRead s of
        Just d    -> d
        Nothing   -> Pandoc nullMeta $ readBlocks s
 

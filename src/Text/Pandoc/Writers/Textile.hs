@@ -399,7 +399,7 @@ inlineToTextile _ (Code _ str) =
            then "<tt>" ++ escapeStringForXML str ++ "</tt>"
            else "@" ++ str ++ "@"
 
-inlineToTextile _ (Str str) = return $ escapeStringForTextile str
+inlineToTextile _ (Str str _) = return $ escapeStringForTextile str
 
 inlineToTextile _ (Math _ str) =
   return $ "<span class=\"math\">" ++ escapeStringForXML str ++ "</math>"
@@ -416,7 +416,7 @@ inlineToTextile opts (Link txt (src, _)) = do
   label <- case txt of
                 [Code _ s]
                  | s == src -> return "$"
-                [Str s]
+                [Str s _]
                  | s == src -> return "$"
                 _           -> inlineListToTextile opts txt
   return $ "\"" ++ label ++ "\":" ++ src

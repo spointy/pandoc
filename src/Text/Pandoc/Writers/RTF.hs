@@ -99,7 +99,7 @@ tableOfContents :: [Block] -> String
 tableOfContents headers =
   let contentsTree = hierarchicalize headers
   in  concatMap (blockToRTF 0 AlignDefault) $
-      [Header 1 nullAttr [Str "Contents"],
+      [Header 1 nullAttr [Str "Contents" ()],
        BulletList (map elementToListItem contentsTree)]
 
 elementToListItem :: Element -> [Block]
@@ -323,7 +323,7 @@ inlineToRTF (Quoted SingleQuote lst) =
 inlineToRTF (Quoted DoubleQuote lst) =
   "\\u8220\"" ++ (inlineListToRTF lst) ++ "\\u8221\""
 inlineToRTF (Code _ str) = "{\\f1 " ++ (codeStringToRTF str) ++ "}"
-inlineToRTF (Str str) = stringToRTF str
+inlineToRTF (Str str _) = stringToRTF str
 inlineToRTF (Math t str) = inlineListToRTF $ readTeXMath' t str
 inlineToRTF (Cite _ lst) = inlineListToRTF lst
 inlineToRTF (RawInline f str)

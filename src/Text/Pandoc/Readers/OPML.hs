@@ -5,6 +5,7 @@ import Text.Pandoc.Definition
 import Text.Pandoc.Builder
 import Text.Pandoc.Readers.HTML (readHtml)
 import Text.Pandoc.Readers.Markdown (readMarkdown)
+import Text.Pandoc.Shared (unscrubStrTag)
 import Text.XML.Light
 import Text.Pandoc.Compat.TagSoupEntity (lookupEntity)
 import Data.Generics
@@ -21,10 +22,10 @@ data OPMLState = OPMLState{
                       , opmlDocDate      :: Inlines
                       } deriving Show
 
-readOPML :: ReaderOptions -> String -> Pandoc
-readOPML _ inp  = setTitle (opmlDocTitle st')
-                   $ setAuthors (opmlDocAuthors st')
-                   $ setDate (opmlDocDate st')
+readOPML :: ReaderOptions -> String -> Pandoc' [SrcSpan]
+readOPML _ inp  = setTitle (unscrubStrTag <$> opmlDocTitle st')
+                   $ setAuthors (fmap unscrubStrTag <$> opmlDocAuthors st')
+                   $ setDate (unscrubStrTag <$> opmlDocDate st')
                    $ doc $ mconcat bs
   where (bs, st') = runState (mapM parseBlock $ normalizeTree $ parseXML inp)
                              OPMLState{ opmlSectionLevel = 0
@@ -58,19 +59,19 @@ attrValue attr elt =
     Just z  -> z
     Nothing -> ""
 
-asHtml :: String -> Inlines
+asHtml :: String -> Inlines' [SrcSpan]
 asHtml s = case readHtml def s of
                 Pandoc _ [Plain ils] -> fromList ils
                 _ -> mempty
 
-asMarkdown :: String -> Blocks
+asMarkdown :: String -> Blocks' [SrcSpan]
 asMarkdown s = fromList bs
   where Pandoc _ bs = readMarkdown def s
 
-getBlocks :: Element -> OPML Blocks
+getBlocks :: Element -> OPML (Blocks' [SrcSpan])
 getBlocks e =  mconcat <$> (mapM parseBlock $ elContent e)
 
-parseBlock :: Content -> OPML Blocks
+parseBlock :: Content -> OPML (Blocks' [SrcSpan])
 parseBlock (Elem e) =
   case qName (elName e) of
         "ownerName"    -> mempty <$ modify (\st ->

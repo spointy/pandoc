@@ -2,7 +2,6 @@
 module Tests.Writers.LaTeX (tests) where
 
 import Test.Framework
-import Text.Pandoc.Builder
 import Text.Pandoc
 import Tests.Helpers
 import Tests.Arbitrary()
@@ -32,26 +31,27 @@ infix 4 =:
 
 tests :: [Test]
 tests = [ testGroup "code blocks"
-          [ "in footnotes" =: note (para "hi" <> codeBlock "hi") =?>
-            "\\footnote{hi\n\n\\begin{Verbatim}\nhi\n\\end{Verbatim}\n}"
-          , test latexListing "identifier" $ codeBlockWith ("id",[],[]) "hi" =?>
+          [ "in footnotes" =: (note (para "hi" <> codeBlock "hi") :: Inlines) =?>
+            ("\\footnote{hi\n\n\\begin{Verbatim}\nhi\n\\end{Verbatim}\n}" :: String)
+          , test latexListing "identifier" $ (codeBlockWith ("id",[],[]) "hi" :: Blocks) =?>
             ("\\begin{lstlisting}[label=id]\nhi\n\\end{lstlisting}" :: String)
-          , test latexListing "no identifier" $ codeBlock "hi" =?>
+          , test latexListing "no identifier" $ (codeBlock "hi" :: Blocks) =?>
             ("\\begin{lstlisting}\nhi\n\\end{lstlisting}" :: String)
           ]
         , testGroup "definition lists"
-          [ "with internal link" =: definitionList [(link "#go" "" (str "testing"),
-             [plain (text "hi there")])] =?>
-            "\\begin{description}\n\\itemsep1pt\\parskip0pt\\parsep0pt\n\\item[{\\hyperref[go]{testing}}]\nhi there\n\\end{description}"
+          [ "with internal link" =:
+             (definitionList [(link "#go" "" (str "testing"), [plain (text "hi there")])] :: Blocks)
+             =?>
+             ("\\begin{description}\n\\itemsep1pt\\parskip0pt\\parsep0pt\n\\item[{\\hyperref[go]{testing}}]\nhi there\n\\end{description}" :: String)
           ]
         , testGroup "math"
-          [ "escape |" =: para (math "\\sigma|_{\\{x\\}}") =?>
-            "$\\sigma|_{\\{x\\}}$"
+          [ "escape |" =: (para (math "\\sigma|_{\\{x\\}}") :: Blocks) =?>
+            ("$\\sigma|_{\\{x\\}}$" :: String)
           ]
         , testGroup "headers"
           [ "unnumbered header" =:
-            headerWith ("foo",["unnumbered"],[]) 1
-              (text "Header 1" <> note (plain $ text "note")) =?>
-            "\\section*{Header 1\\footnote{note}}\\label{foo}\n\\addcontentsline{toc}{section}{Header 1}\n"
+            (headerWith ("foo",["unnumbered"],[]) 1
+               (text "Header 1" <> note (plain $ text "note")) :: Blocks) =?>
+            ("\\section*{Header 1\\footnote{note}}\\label{foo}\n\\addcontentsline{toc}{section}{Header 1}\n" :: String)
           ]
         ]

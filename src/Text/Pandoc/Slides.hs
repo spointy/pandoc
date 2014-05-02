@@ -49,7 +49,7 @@ prepSlides :: Int -> [Block] -> [Block]
 prepSlides slideLevel = ensureStartWithH . splitHrule . extractRefsHeader
   where splitHrule (HorizontalRule : Header n attr xs : ys)
                        | n == slideLevel = Header slideLevel attr xs : splitHrule ys
-        splitHrule (HorizontalRule : xs) = Header slideLevel nullAttr [Str "\0"] :
+        splitHrule (HorizontalRule : xs) = Header slideLevel nullAttr [Str "\0" ()] :
                                            splitHrule xs
         splitHrule (x : xs)              = x : splitHrule xs
         splitHrule []                    = []
@@ -60,4 +60,4 @@ prepSlides slideLevel = ensureStartWithH . splitHrule . extractRefsHeader
                _ -> bs
         ensureStartWithH bs@(Header n _ _:_)
                        | n <= slideLevel = bs
-        ensureStartWithH bs              = Header slideLevel nullAttr [Str "\0"] : bs
+        ensureStartWithH bs              = Header slideLevel nullAttr [Str "\0" ()] : bs

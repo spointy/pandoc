@@ -414,7 +414,7 @@ inlineToTexinfo (Quoted DoubleQuote lst) = do
 
 inlineToTexinfo (Cite _ lst) =
   inlineListToTexinfo lst
-inlineToTexinfo (Str str) = return $ text (stringToTexinfo str)
+inlineToTexinfo (Str str _) = return $ text (stringToTexinfo str)
 inlineToTexinfo (Math _ str) = return $ inCmd "math" $ text str
 inlineToTexinfo (RawInline f str)
   | f == "latex" || f == "tex" =
@@ -430,7 +430,7 @@ inlineToTexinfo (Link txt (src@('#':_), _)) = do
            braces (text (stringToTexinfo src) <> text "," <> contents)
 inlineToTexinfo (Link txt (src, _)) = do
   case txt of
-        [Str x] | escapeURI x == src ->  -- autolink
+        [Str x _] | escapeURI x == src ->  -- autolink
              do return $ text $ "@url{" ++ x ++ "}"
         _ -> do contents <- escapeCommas $ inlineListToTexinfo txt
                 let src1 = stringToTexinfo src

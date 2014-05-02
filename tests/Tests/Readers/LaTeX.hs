@@ -2,14 +2,14 @@
 module Tests.Readers.LaTeX (tests) where
 
 import Text.Pandoc.Definition
+import Text.Pandoc.Shared ( scrubStrTag )
 import Test.Framework
 import Tests.Helpers
 import Tests.Arbitrary()
-import Text.Pandoc.Builder
 import Text.Pandoc
 
 latex :: String -> Pandoc
-latex = readLaTeX def
+latex = scrubStrTag . readLaTeX def
 
 infix 4 =:
 (=:) :: ToString c
@@ -93,24 +93,24 @@ natbibCitations = testGroup "natbib"
   , "multiple" =: "\\citeauthor{item1} \\citetext{\\citeyear{item1}; \\citeyear[p.~30]{item2}; \\citealp[see also][]{item3}}"
     =?> para (cite [baseCitation{ citationMode = AuthorInText }
                    ,baseCitation{ citationMode = SuppressAuthor
-                                , citationSuffix = [Str "p.\160\&30"]
+                                , citationSuffix = [Str "p.\160\&30" ()]
                                 , citationId = "item2" }
                    ,baseCitation{ citationId = "item3"
-                                , citationPrefix = [Str "see",Space,Str "also"]
+                                , citationPrefix = [Str "see" (),Space,Str "also" ()]
                                 , citationMode = NormalCitation }
                    ] (rt "\\citetext{\\citeyear{item1}; \\citeyear[p.~30]{item2}; \\citealp[see also][]{item3}}"))
   , "group" =: "\\citetext{\\citealp[see][p.~34--35]{item1}; \\citealp[also][chap. 3]{item3}}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationPrefix = [Str "see"]
-                                , citationSuffix = [Str "p.\160\&34\8211\&35"] }
+                                , citationPrefix = [Str "see" ()]
+                                , citationSuffix = [Str "p.\160\&34\8211\&35" ()] }
                    ,baseCitation{ citationMode = NormalCitation
                                 , citationId = "item3"
-                                , citationPrefix = [Str "also"]
-                                , citationSuffix = [Str "chap.",Space,Str "3"] }
+                                , citationPrefix = [Str "also" ()]
+                                , citationSuffix = [Str "chap." (),Space,Str "3" ()] }
                    ] (rt "\\citetext{\\citealp[see][p.~34--35]{item1}; \\citealp[also][chap. 3]{item3}}"))
   , "suffix and locator" =: "\\citep[pp.~33, 35--37, and nowhere else]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationSuffix = [Str "pp.\160\&33,",Space,Str "35\8211\&37,",Space,Str "and",Space,Str "nowhere",Space, Str "else"] }] (rt "\\citep[pp.~33, 35--37, and nowhere else]{item1}"))
+                                , citationSuffix = [Str "pp.\160\&33," (),Space,Str "35\8211\&37," (),Space,Str "and" (),Space,Str "nowhere" (),Space, Str "else" ()] }] (rt "\\citep[pp.~33, 35--37, and nowhere else]{item1}"))
   , "suffix only" =: "\\citep[and nowhere else]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
                                 , citationSuffix = toList $ text "and nowhere else" }] (rt "\\citep[and nowhere else]{item1}"))
@@ -118,13 +118,13 @@ natbibCitations = testGroup "natbib"
     =?> para (cite [baseCitation{ citationMode = SuppressAuthor }] (rt "\\citeyearpar{item1}") <>
               text ", and now Doe with a locator " <>
               cite [baseCitation{ citationMode = SuppressAuthor
-                                , citationSuffix = [Str "p.\160\&44"]
+                                , citationSuffix = [Str "p.\160\&44" ()]
                                 , citationId = "item2" }] (rt "\\citeyearpar[p.~44]{item2}"))
   , "markup" =: "\\citep[\\emph{see}][p. \\textbf{32}]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationPrefix = [Emph [Str "see"]]
-                                , citationSuffix = [Str "p.",Space,
-                                    Strong [Str "32"]] }] (rt "\\citep[\\emph{see}][p. \\textbf{32}]{item1}"))
+                                , citationPrefix = [Emph [Str "see" ()]]
+                                , citationSuffix = [Str "p." (),Space,
+                                    Strong [Str "32" ()]] }] (rt "\\citep[\\emph{see}][p. \\textbf{32}]{item1}"))
   ]
 
 biblatexCitations :: Test
@@ -140,24 +140,24 @@ biblatexCitations = testGroup "biblatex"
   , "multiple" =: "\\textcites{item1}[p.~30]{item2}[see also][]{item3}"
     =?> para (cite [baseCitation{ citationMode = AuthorInText }
                    ,baseCitation{ citationMode = NormalCitation
-                                , citationSuffix = [Str "p.\160\&30"]
+                                , citationSuffix = [Str "p.\160\&30" ()]
                                 , citationId = "item2" }
                    ,baseCitation{ citationId = "item3"
-                                , citationPrefix = [Str "see",Space,Str "also"]
+                                , citationPrefix = [Str "see" (),Space,Str "also" ()]
                                 , citationMode = NormalCitation }
                    ] (rt "\\textcites{item1}[p.~30]{item2}[see also][]{item3}"))
   , "group" =: "\\autocites[see][p.~34--35]{item1}[also][chap. 3]{item3}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationPrefix = [Str "see"]
-                                , citationSuffix = [Str "p.\160\&34\8211\&35"] }
+                                , citationPrefix = [Str "see" ()]
+                                , citationSuffix = [Str "p.\160\&34\8211\&35" ()] }
                    ,baseCitation{ citationMode = NormalCitation
                                 , citationId = "item3"
-                                , citationPrefix = [Str "also"]
-                                , citationSuffix = [Str "chap.",Space,Str "3"] }
+                                , citationPrefix = [Str "also" ()]
+                                , citationSuffix = [Str "chap." (),Space,Str "3" ()] }
                    ] (rt "\\autocites[see][p.~34--35]{item1}[also][chap. 3]{item3}"))
   , "suffix and locator" =: "\\autocite[pp.~33, 35--37, and nowhere else]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationSuffix = [Str "pp.\160\&33,",Space,Str "35\8211\&37,",Space,Str "and",Space,Str "nowhere",Space, Str "else"] }] (rt "\\autocite[pp.~33, 35--37, and nowhere else]{item1}"))
+                                , citationSuffix = [Str "pp.\160\&33," (),Space,Str "35\8211\&37," (),Space,Str "and" (),Space,Str "nowhere" (),Space, Str "else" ()] }] (rt "\\autocite[pp.~33, 35--37, and nowhere else]{item1}"))
   , "suffix only" =: "\\autocite[and nowhere else]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
                                 , citationSuffix = toList $ text "and nowhere else" }] (rt "\\autocite[and nowhere else]{item1}"))
@@ -165,13 +165,13 @@ biblatexCitations = testGroup "biblatex"
     =?> para (cite [baseCitation{ citationMode = SuppressAuthor }] (rt "\\autocite*{item1}") <>
               text ", and now Doe with a locator " <>
               cite [baseCitation{ citationMode = SuppressAuthor
-                                , citationSuffix = [Str "p.\160\&44"]
+                                , citationSuffix = [Str "p.\160\&44" ()]
                                 , citationId = "item2" }] (rt "\\autocite*[p.~44]{item2}"))
   , "markup" =: "\\autocite[\\emph{see}][p. \\textbf{32}]{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation
-                                , citationPrefix = [Emph [Str "see"]]
-                                , citationSuffix = [Str "p.",Space,
-                                    Strong [Str "32"]] }] (rt "\\autocite[\\emph{see}][p. \\textbf{32}]{item1}"))
+                                , citationPrefix = [Emph [Str "see" ()]]
+                                , citationSuffix = [Str "p." (),Space,
+                                    Strong [Str "32" ()]] }] (rt "\\autocite[\\emph{see}][p. \\textbf{32}]{item1}"))
   , "parencite" =: "\\parencite{item1}"
     =?> para (cite [baseCitation{ citationMode = NormalCitation }] (rt "\\parencite{item1}"))
   ]

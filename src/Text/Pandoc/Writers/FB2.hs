@@ -408,8 +408,8 @@ indent = indentBlock
   spacer :: String
   spacer = replicate 4 ' '
   --
-  indentBlock (Plain ins) = Plain ((Str spacer):ins)
-  indentBlock (Para ins) = Para ((Str spacer):ins)
+  indentBlock (Plain ins) = Plain ((Str spacer ()):ins)
+  indentBlock (Para ins) = Para ((Str spacer ()):ins)
   indentBlock (CodeBlock a s) =
     let s' = unlines . map (spacer++) . lines $ s
     in  CodeBlock a s'
@@ -419,15 +419,15 @@ indent = indentBlock
   -- indent every (explicit) line
   indentLines :: [Inline] -> [Inline]
   indentLines ins = let lns = split isLineBreak ins :: [[Inline]]
-                    in  intercalate [LineBreak] $ map ((Str spacer):) lns
+                    in  intercalate [LineBreak] $ map ((Str spacer ()):) lns
 
 capitalize :: Inline -> Inline
-capitalize (Str xs) = Str $ map toUpper xs
+capitalize (Str xs src) = Str (map toUpper xs) src
 capitalize x = x
 
 -- | Convert a Pandoc's Inline element to FictionBook XML representation.
 toXml :: Inline -> FBM [Content]
-toXml (Str s) = return [txt s]
+toXml (Str s _) = return [txt s]
 toXml (Span _ ils) = cMapM toXml ils
 toXml (Emph ss) = list `liftM` wrap "emphasis" ss
 toXml (Strong ss) = list `liftM` wrap "strong" ss
@@ -562,7 +562,7 @@ list = (:[])
 
 -- | Convert an 'Inline' to plaintext.
 plain :: Inline -> String
-plain (Str s) = s
+plain (Str s _) = s
 plain (Emph ss) = concat (map plain ss)
 plain (Span _ ss) = concat (map plain ss)
 plain (Strong ss) = concat (map plain ss)

@@ -36,7 +36,7 @@ import Text.Pandoc.PDF (makePDF)
 import Text.Pandoc.Readers.LaTeX (handleIncludes)
 import Text.Pandoc.Shared ( tabFilter, readDataFileUTF8, readDataFile,
                             safeRead, headerShift, normalize, err, warn,
-                            openURL )
+                            openURL, scrubStrTag )
 import Text.Pandoc.XML ( toEntities )
 import Text.Pandoc.SelfContained ( makeSelfContained )
 import Text.Pandoc.Process (pipeProcess)
@@ -1169,7 +1169,7 @@ main = do
            reader readerOpts
 
 
-  let doc0 = M.foldWithKey setMeta doc metadata
+  let doc0 = M.foldWithKey setMeta (scrubStrTag doc) metadata
   let doc1 = foldr ($) doc0 transforms
   doc2 <- foldrM ($) doc1 $ map ($ [writerName']) plugins
 

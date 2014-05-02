@@ -6,11 +6,16 @@ module Tests.Helpers ( test
                      , property
                      , ToString(..)
                      , ToPandoc(..)
+                     , module Text.Pandoc.Builder
+                     , para, rawBlock, codeBlock, codeBlockWith, plain, space
+                     , header, headerWith
                      )
                      where
 
 import Text.Pandoc.Definition
-import Text.Pandoc.Builder (Inlines, Blocks, doc, plain)
+import Text.Pandoc.Builder hiding (para, rawBlock, codeBlock, codeBlockWith, plain,
+                                   space, header, headerWith)
+import qualified Text.Pandoc.Builder as B
 import Test.Framework
 import Test.Framework.Providers.HUnit
 import Test.Framework.Providers.QuickCheck2
@@ -21,6 +26,31 @@ import Text.Pandoc.Writers.Native (writeNative)
 import qualified Test.QuickCheck.Property as QP
 import Data.Algorithm.Diff
 import qualified Data.Map as M
+
+--Help type inference along.
+para :: Inlines -> Blocks
+para = B.para
+
+rawBlock :: String -> String -> Blocks
+rawBlock = B.rawBlock
+
+codeBlock :: String -> Blocks
+codeBlock = B.codeBlock
+
+codeBlockWith :: Attr -> String -> Blocks
+codeBlockWith = B.codeBlockWith
+
+plain :: Inlines -> Blocks
+plain = B.plain
+
+space :: Inlines
+space = B.space
+
+header :: Int -> Inlines -> Blocks
+header = B.header
+
+headerWith :: Attr -> Int -> Inlines -> Blocks
+headerWith = B.headerWith
 
 test :: (ToString a, ToString b, ToString c)
      => (a -> b)  -- ^ function to test

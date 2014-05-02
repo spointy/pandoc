@@ -271,7 +271,7 @@ inlineToConTeXt (Quoted DoubleQuote lst) = do
   contents <- inlineListToConTeXt lst
   return $ "\\quotation" <> braces contents
 inlineToConTeXt (Cite _ lst) = inlineListToConTeXt lst
-inlineToConTeXt (Str str) = do
+inlineToConTeXt (Str str _) = do
   opts <- gets stOptions
   return $ text $ stringToConTeXt opts str
 inlineToConTeXt (Math InlineMath str) =
@@ -297,7 +297,7 @@ inlineToConTeXt (Link txt          (('#' : ref), _)) = do
            <> brackets (text ref)
 
 inlineToConTeXt (Link txt          (src, _))      = do
-  let isAutolink = txt == [Str src]
+  let isAutolink = fmap scrubStrTag txt == [Str src ()]
   st <- get
   let next = stNextRef st
   put $ st {stNextRef = next + 1}
@@ -318,7 +318,8 @@ inlineToConTeXt (Image _ (src, _)) = do
   return $ braces $ "\\externalfigure" <> brackets (text src')
 inlineToConTeXt (Note contents) = do
   contents' <- blockListToConTeXt contents
-  let codeBlock x@(CodeBlock _ _) = [x]
+  let codeBlock :: Block -> [Block]
+      codeBlock x@(CodeBlock _ _) = [x]
       codeBlock _ = []
   let codeBlocks = query codeBlock contents
   return $ if null codeBlocks

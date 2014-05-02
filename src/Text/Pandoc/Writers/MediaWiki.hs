@@ -374,7 +374,7 @@ inlineToMediaWiki opts (Cite _  lst) = inlineListToMediaWiki opts lst
 inlineToMediaWiki _ (Code _ str) =
   return $ "<code>" ++ (escapeString str) ++ "</code>"
 
-inlineToMediaWiki _ (Str str) = return $ escapeString str
+inlineToMediaWiki _ (Str str _) = return $ escapeString str
 
 inlineToMediaWiki _ (Math _ str) = return $ "<math>" ++ str ++ "</math>"
                                  -- note:  str should NOT be escaped
@@ -391,7 +391,7 @@ inlineToMediaWiki _ Space = return " "
 inlineToMediaWiki opts (Link txt (src, _)) = do
   label <- inlineListToMediaWiki opts txt
   case txt of
-     [Str s] | escapeURI s == src -> return src
+     [Str s _] | escapeURI s == src -> return src
      _  -> if isURI src
               then return $ "[" ++ src ++ " " ++ label ++ "]"
               else return $ "[[" ++ src' ++ "|" ++ label ++ "]]"
